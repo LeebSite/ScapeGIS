@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Kayak_Sans_Family";
+  src: url("/fonts/KayakSans-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    /* Base: White */
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    /* Card: White */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    /* Popover: White */
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary: Electric Blue #1f8Ef1 (208 88% 53%) */
+    --primary: 208 88% 53%;
+    --primary-foreground: 210 40% 98%;
+
+    /* Secondary: Light Indigo #6c5CE7 (248 69% 63%) */
+    --secondary: 248 69% 63%;
+    --secondary-foreground: 210 40% 98%;
+
+    /* Accent: Turquoise Green #00b894 (168 100% 36%) used as accent/success */
+    --accent: 168 100% 36%;
+    --accent-foreground: 210 40% 98%;
+
+    /* Muted: Light gray for backgrounds */
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    /* Destructive: Standard Red */
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 208 88% 53%;
+    /* Matches Primary */
+    --radius: 0.5rem;
+
+    /* Chart colors mapping to new palette */
+    --chart-1: 208 88% 53%;
+    /* Electric Blue */
+    --chart-2: 168 100% 36%;
+    /* Turquoise Green */
+    --chart-3: 248 69% 63%;
+    /* Light Indigo */
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+  }
+
+  .dark {
+    /* Base: Grayish Black (Slate 950-ish) */
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+
+    /* Card: Slightly lighter than bg */
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    /* Primary: Electric Blue (Keep same) */
+    --primary: 208 88% 53%;
+    --primary-foreground: 210 40% 98%;
+
+    /* Secondary: Light Indigo (Keep same) */
+    --secondary: 248 69% 63%;
+    --secondary-foreground: 210 40% 98%;
+
+    /* Accent: Turquoise Green (Keep same) */
+    --accent: 168 100% 36%;
+    --accent-foreground: 210 40% 98%;
+
+    /* Muted: Darker gray */
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 208 88% 53%;
+    /* Matches Primary */
+
+    --chart-1: 208 88% 53%;
+    --chart-2: 168 100% 36%;
+    --chart-3: 248 69% 63%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Leaflet CSS */
+@import 'leaflet/dist/leaflet.css';
+
+/* Fix Leaflet z-index issues with other UI components */
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 0 !important;
+}
+
+.leaflet-control-zoom,
+.leaflet-control-attribution {
+  z-index: 1 !important;
+}
+
+/* Ensure popups appear above other elements */
+.leaflet-popup {
+  z-index: 999 !important;
+}
+
+/* Custom animations for GIS upload */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}

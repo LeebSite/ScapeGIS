@@ -1,0 +1,69 @@
+# =========================
+# Core Web Framework
+# =========================
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+
+# =========================
+# Database & ORM
+# =========================
+SQLAlchemy==2.0.27
+psycopg2-binary==2.9.9
+
+# =========================
+# Migration
+# =========================
+alembic==1.13.1
+
+# =========================
+# Geo / GIS
+# =========================
+geoalchemy2==0.14.3
+shapely==2.0.3
+geopandas==0.14.3
+fiona==1.9.5
+pyproj==3.6.1
+GDAL==3.8.3
+
+# =========================
+# Validation & Schemas
+# =========================
+pydantic==2.12.5
+pydantic-settings==2.5.0
+email-validator==2.1.1
+
+# =========================
+# Auth & Security
+# =========================
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+google-auth==2.28.0
+
+# =========================
+# HTTP Client
+# =========================
+httpx==0.27.0
+requests==2.31.0
+
+# =========================
+# AI / LLM (Gemini)
+# =========================
+google-generativeai==0.4.1
+
+# =========================
+# File Upload & Parsing
+# =========================
+python-multipart==0.0.9
+
+# =========================
+# Utilities
+# =========================
+python-dotenv==1.0.1
+loguru==0.7.2
+
+# =========================
+# Testing (Optional but recommended)
+# =========================
+pytest==8.1.1
+pytest-asyncio==0.23.5
