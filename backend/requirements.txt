@@ -23,7 +23,7 @@ shapely==2.0.3
 geopandas==0.14.3
 fiona==1.9.5
 pyproj==3.6.1
-GDAL==3.8.3
+# GDAL==3.8.3 (Handled by fiona binary wheel)
 
 # =========================
 # Validation & Schemas
@@ -56,12 +56,10 @@ google-generativeai==0.4.1
 # =========================
 python-multipart==0.0.9
 
-# =========================
-# Utilities
-# =========================
 python-dotenv==1.0.1
 loguru==0.7.2
-
+slowapi==0.1.10
+user-agents==2.2.0
 # =========================
 # Testing (Optional but recommended)
 # =========================
