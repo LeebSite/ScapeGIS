@@ -9,6 +9,9 @@ from .email_verification import EmailVerification
 from .gis_dataset import GISDataset
 from .gis_layer import GISLayer
 from .gis_feature import GISFeature
+from .workspace import Workspace
+from .workspace_member import WorkspaceMember, WorkspaceMemberRole
+from .workspace_invitation import WorkspaceInvitation
 
 __all__ = [
     "User",
@@ -25,5 +28,8 @@ __all__ = [
     "GISDataset",
     "GISLayer",
     "GISFeature",
+    "Workspace",
+    "WorkspaceMember",
+    "WorkspaceMemberRole",
+    "WorkspaceInvitation",
 ]
-
