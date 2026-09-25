@@ -51,7 +51,7 @@ def upgrade() -> None:
     # ------------------------------------------------------------------ #
     # workspace_members
     # ------------------------------------------------------------------ #
-    workspace_member_role = postgresql.ENUM("owner", "member", name="workspacememberrole")
+    workspace_member_role = postgresql.ENUM("OWNER", "MEMBER", name="workspacememberrole")
     workspace_member_role.create(op.get_bind())
 
     op.create_table(
@@ -71,9 +71,9 @@ def upgrade() -> None:
         ),
         sa.Column(
             "role",
-            postgresql.ENUM("owner", "member", name="workspacememberrole", create_type=False),
+            postgresql.ENUM("OWNER", "MEMBER", name="workspacememberrole", create_type=False),
             nullable=False,
-            server_default="member",
+            server_default="MEMBER",
         ),
         sa.Column(
             "joined_at",
@@ -127,3 +127,5 @@ def downgrade() -> None:
     op.drop_index("ix_workspaces_slug", table_name="workspaces")
     op.drop_index("ix_workspaces_owner_id", table_name="workspaces")
     op.drop_table("workspaces")
+
+
