@@ -1,85 +1,89 @@
-import http from "./http";
-import type { Workspace, WorkspaceMember } from "../types";
-import { API_CONFIG } from "./config";
-import * as mockWorkspace from "@/lib/mocks/workspaces";
+﻿import http from "./http";
+
+export interface Workspace {
+    id: string;
+    name: string;
+    slug: string;
+    description?: string;
+    logo_url?: string;
+    role: "owner" | "member";
+    member_count: number;
+    created_at: string;
+}
+
+export interface WorkspaceDetail extends Workspace {
+    owner_id: string;
+    updated_at: string;
+}
+
+export interface WorkspaceMember {
+    id: string;
+    workspace_id: string;
+    user_id: string;
+    role: "owner" | "member";
+    joined_at: string;
+    user_name?: string;
+    user_email?: string;
+    user_avatar_url?: string;
+}
 
 export interface CreateWorkspaceRequest {
     name: string;
     description?: string;
 }
 
-export interface InviteMemberRequest {
-    email: string;
-    role: "admin" | "member";
+export interface UpdateWorkspaceRequest {
+    name?: string;
+    description?: string;
+    logo_url?: string;
 }
 
-export interface WorkspaceUsageResponse {
-    prompts_used_this_month: number;
-    prompts_limit: number;
-    projects_count: number;
-    projects_limit: number;
-    members_count: number;
-    members_limit: number;
+export interface InviteMemberRequest {
+    email: string;
+}
+
+export interface InviteMemberResponse {
+    message: string;
+    token: string;
+    invitation_id: string;
+}
+
+export interface AcceptInvitationResponse {
+    message: string;
+    workspace_id: string;
+    workspace_name: string;
 }
 
 export const workspaceAPI = {
-    /**
-     * Get all workspaces for current user
-     * GET /workspaces
-     */
-    getWorkspaces: () => http.get<Workspace[]>("/workspaces"),
+    /** GET /workspaces - list all workspaces for current user */
+    getWorkspaces: () =>
+        http.get<Workspace[]>("/workspaces"),
 
-    /**
-     * Create a new workspace
-     * POST /workspaces
-     */
+    /** POST /workspaces - create workspace (developer only) */
     createWorkspace: (data: CreateWorkspaceRequest) =>
-        http.post<Workspace>("/workspaces", data),
+        http.post<{ message: string; workspace_id: string }>("/workspaces", data),
 
-    /**
-     * Update workspace
-     * PUT /workspaces/{id}
-     */
-    updateWorkspace: (id: string, data: Partial<CreateWorkspaceRequest>) =>
-        http.put<Workspace>(`/workspaces/${id}`, data),
+    /** GET /workspaces/{id} - workspace detail */
+    getWorkspace: (id: string) =>
+        http.get<WorkspaceDetail>(`/workspaces/${id}`),
 
-    /**
-     * Delete workspace
-     * DELETE /workspaces/{id}
-     */
+    /** PATCH /workspaces/{id} - update workspace (owner only) */
+    updateWorkspace: (id: string, data: UpdateWorkspaceRequest) =>
+        http.patch<WorkspaceDetail>(`/workspaces/${id}`, data),
+
+    /** DELETE /workspaces/{id} - delete workspace (owner only) */
     deleteWorkspace: (id: string) =>
         http.delete<{ message: string }>(`/workspaces/${id}`),
 
-    /**
-     * Get workspace members
-     * GET /workspaces/{id}/members
-     */
+    /** GET /workspaces/{id}/members */
     getMembers: (workspaceId: string) =>
         http.get<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`),
 
-    /**
-     * Invite a member to workspace
-     * POST /workspaces/{id}/invite
-     */
+    /** POST /workspaces/{id}/invite - invite by email (owner only) */
     inviteMember: (workspaceId: string, data: InviteMemberRequest) =>
-        http.post<{ message: string; invitation_id: string }>(
-            `/workspaces/${workspaceId}/invite`,
-            data
-        ),
+        http.post<InviteMemberResponse>(`/workspaces/${workspaceId}/invite`, data),
 
-    /**
-     * Remove a member from workspace
-     * DELETE /workspaces/{id}/members/{memberId}
-     */
-    removeMember: (workspaceId: string, memberId: string) =>
-        http.delete<{ message: string }>(
-            `/workspaces/${workspaceId}/members/${memberId}`
-        ),
-
-    /**
-     * Get workspace usage stats
-     * GET /workspaces/{id}/usage
-     */
-    getUsage: (workspaceId: string) =>
-        http.get<WorkspaceUsageResponse>(`/workspaces/${workspaceId}/usage`),
+    /** POST /invitations/{token}/accept - accept invitation */
+    acceptInvitation: (token: string) =>
+        http.post<AcceptInvitationResponse>(`/invitations/${token}/accept`, {}),
 };
