@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { projectAPI } from "@/lib/api";
 import { GISService } from "@/lib/api/GISService";
+import { GISAccessService } from "@/lib/api/GISAccessService";
 import { useWorkspaceStore } from "@/lib/store";
 import type { ProjectDetail, ProjectLayer, ProjectType } from "@/lib/types";
 import type { GISDataset, GISLayer as GISLayerType, GeoJSONFeatureCollection } from "@/lib/types/gis";
@@ -49,9 +50,9 @@ const STATUS_COLORS: Record<string, string> = {
 
 // ---------- Add Layer Modal ----------
 function AddLayerModal({
-    open, projectId, onClose, onAdded,
+    open, projectId, workspaceId, onClose, onAdded,
 }: {
-    open: boolean; projectId: string; onClose: () => void; onAdded: () => void;
+    open: boolean; projectId: string; workspaceId: string; onClose: () => void; onAdded: () => void;
 }) {
     const [datasets, setDatasets] = useState<GISDataset[]>([]);
     const [selectedDataset, setSelectedDataset] = useState<string>("");
@@ -63,16 +64,16 @@ function AddLayerModal({
     useEffect(() => {
         if (open) {
             setLoadingDatasets(true);
-            GISService.getDatasets().then((d) => {
+            GISAccessService.getWorkspaceAuthorizedDatasets(workspaceId).then((d) => {
                 setDatasets(d.filter((ds) => ds.status === "completed"));
-            }).catch(() => toast.error("Failed to load datasets"))
+            }).catch(() => toast.error("Dataset GIS tidak tersedia untuk workspace ini"))
               .finally(() => setLoadingDatasets(false));
         }
     }, [open]);
 
     useEffect(() => {
         if (selectedDataset) {
-            GISService.getDatasetLayers(selectedDataset).then(setLayers).catch(() => {});
+            GISAccessService.getWorkspaceDatasetLayers(workspaceId, selectedDataset).then(setLayers).catch(() => {});
             setSelectedLayer("");
         } else {
             setLayers([]);
@@ -536,6 +537,7 @@ export default function ProjectDetailPage() {
             <AddLayerModal
                 open={showAddLayer}
                 projectId={projectId}
+                workspaceId={project?.workspace_id || ""}
                 onClose={() => setShowAddLayer(false)}
                 onAdded={handleLayerRefresh}
             />
