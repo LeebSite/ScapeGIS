@@ -1,4 +1,4 @@
-﻿"""
+"""
 Workspace Repository - Pure SQLAlchemy DB operations only.
 No business logic here.
 """
@@ -158,3 +158,7 @@ def close_invitation(db: Session, invitation: WorkspaceInvitation) -> WorkspaceI
     db.commit()
     db.refresh(invitation)
     return invitation
+
+def list_all(db: Session) -> List[Workspace]:
+    """Get all workspaces in the system (admin use)"""
+    return db.query(Workspace).options(joinedload(Workspace.owner)).order_by(Workspace.name.asc()).all()
