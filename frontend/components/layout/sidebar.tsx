@@ -2,10 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-// use native img for logos to avoid Next/Image optimization issues
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/lib/store";
-import { getNavItems } from "@/lib/nav";
 import { useAuthStore } from "@/lib/store";
 import {
   LayoutDashboard,
@@ -18,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Database,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { UserRole } from "@/lib/types";
@@ -38,7 +37,8 @@ const adminNavItems = [
 
 const developerNavItems = [
   { href: "/dashboard/developer", label: "Beranda", icon: LayoutDashboard },
-  { href: "/dashboard/developer/projects", label: "Proyek", icon: FolderKanban },
+  { href: "/dashboard/developer/workspaces", label: "Ruang Kerja", icon: Building2 },
+  { href: "/dashboard/developer/projects", label: "Proyek GIS", icon: FolderKanban },
   { href: "/dashboard/developer/subscription", label: "Langganan", icon: CreditCard },
   { href: "/dashboard/developer/settings", label: "Pengaturan", icon: Settings },
 ];
@@ -49,7 +49,6 @@ export function Sidebar({ role }: SidebarProps) {
   const { user } = useAuthStore();
   const resolvedRole = role ?? (user?.role as UserRole) ?? "developer";
 
-  // Use local nav config instead of getNavItems to ensure translation
   const navItems = resolvedRole === 'admin' ? adminNavItems : developerNavItems;
 
   const isActivePath = (href: string) =>
@@ -72,16 +71,16 @@ export function Sidebar({ role }: SidebarProps) {
               <img
                 src="/img/logo_scapegis.svg"
                 alt="Scapegis Logo"
-                width={36}
-                height={36}
+                width={34}
+                height={34}
                 className="block"
               />
               <div className="flex flex-col">
                 <span className="font-kayak text-lg md:text-xl tracking-wide font-semibold text-[#01123E]">
                   Scapegis
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  {resolvedRole === "admin" ? "Administrator" : "Pengembang"}
+                <span className="text-xs text-muted-foreground font-medium">
+                  {resolvedRole === "admin" ? "Administrator" : "Developer Portal"}
                 </span>
               </div>
             </div>
@@ -141,14 +140,14 @@ export function Sidebar({ role }: SidebarProps) {
                 "group relative flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
                 isActive
                   ? "bg-primary text-primary-foreground shadow-md"
-                  : "text-muted-foreground hover:bg-transparent hover:text-primary hover:ring-1 hover:ring-primary/50",
+                  : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
                 isCollapsed ? "justify-center" : "gap-3"
               )}
             >
               <Icon
                 className={cn(
                   "h-5 w-5 shrink-0 transition-colors",
-                  isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
+                  isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-foreground"
                 )}
               />
 
@@ -165,7 +164,7 @@ export function Sidebar({ role }: SidebarProps) {
 
               {/* Tooltip (collapsed) */}
               {isCollapsed && (
-                <span className="pointer-events-none absolute left-full ml-2 rounded-md bg-popover px-2 py-1 text-sm text-popover-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100">
+                <span className="pointer-events-none absolute left-full ml-2 rounded-md bg-popover px-2 py-1 text-sm text-popover-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100 z-50">
                   {item.label}
                 </span>
               )}

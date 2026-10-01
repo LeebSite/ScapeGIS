@@ -1,15 +1,7 @@
-﻿import http from "./http";
+import http from "./http";
+import type { Workspace as GlobalWorkspace } from "@/lib/types";
 
-export interface Workspace {
-    id: string;
-    name: string;
-    slug: string;
-    description?: string;
-    logo_url?: string;
-    role: "owner" | "member";
-    member_count: number;
-    created_at: string;
-}
+export type Workspace = GlobalWorkspace;
 
 export interface WorkspaceDetail extends Workspace {
     owner_id: string;
@@ -61,7 +53,7 @@ export const workspaceAPI = {
 
     /** POST /workspaces - create workspace (developer only) */
     createWorkspace: (data: CreateWorkspaceRequest) =>
-        http.post<{ message: string; workspace_id: string }>("/workspaces", data),
+        http.post<Workspace>("/workspaces", data),
 
     /** GET /workspaces/{id} - workspace detail */
     getWorkspace: (id: string) =>

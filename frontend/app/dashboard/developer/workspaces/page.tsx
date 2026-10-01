@@ -1,7 +1,11 @@
-ï»¿"use client";
+"use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Building2, Users, Crown, MoreVertical, Trash2, Pencil, Send } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+    Plus, Building2, Users, Crown, MoreVertical, Trash2,
+    Pencil, Send, FolderKanban, ArrowRight
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -27,7 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { workspaceAPI, type Workspace, type WorkspaceMember } from "@/lib/api/WorkspaceService";
-import { useAuthStore } from "@/lib/store";
+import { useAuthStore, useWorkspaceStore } from "@/lib/store";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 // --------------------------------------------------------------------------
@@ -48,7 +52,7 @@ function CreateWorkspaceModal({
 }: {
     open: boolean;
     onClose: () => void;
-    onCreated: () => void;
+    onCreated: (newWs: Workspace) => void;
 }) {
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
@@ -58,14 +62,14 @@ function CreateWorkspaceModal({
         if (!name.trim()) return;
         setLoading(true);
         try {
-            await workspaceAPI.createWorkspace({ name: name.trim(), description: description.trim() || undefined });
-            toast.success("Workspace created!");
+            const res = await workspaceAPI.createWorkspace({ name: name.trim(), description: description.trim() || undefined });
+            toast.success(`Workspace "${res.data.name}" berhasil dibuat!`);
             setName("");
             setDescription("");
-            onCreated();
+            onCreated(res.data);
             onClose();
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || "Failed to create workspace");
+            toast.error(err?.response?.data?.detail || "Gagal membuat workspace");
         } finally {
             setLoading(false);
         }
@@ -75,136 +79,41 @@ function CreateWorkspaceModal({
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Create Workspace</DialogTitle>
-                    <DialogDescription>
-                        Workspace adalah organisasi Anda untuk mengelola proyek dan tim GIS.
+                    <DialogTitle className="flex items-center gap-2">
+                        <Building2 className="h-5 w-5 text-primary" />
+                        Buat Ruang Kerja (Workspace) Baru
+                    </DialogTitle>
+                    <DialogDescription className="text-xs md:text-sm">
+                        Workspace adalah organisasi untuk mengelompokkan tim, proyek GIS, dan dataset lokasi Anda.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-2">
                     <div className="space-y-1.5">
-                        <Label htmlFor="ws-name">Workspace Name *</Label>
+                        <Label htmlFor="ws-name">Nama Workspace *</Label>
                         <Input
                             id="ws-name"
-                            placeholder="e.g. PT Maju Property"
+                            placeholder="Contoh: PT Summarecon Land"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                         />
                     </div>
                     <div className="space-y-1.5">
-                        <Label htmlFor="ws-desc">Description</Label>
+                        <Label htmlFor="ws-desc">Deskripsi (Opsional)</Label>
                         <Textarea
                             id="ws-desc"
-                            placeholder="Optional description..."
+                            placeholder="Deskripsi singkat mengenai divisi atau wilayah proyek..."
                             rows={3}
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                         />
                     </div>
                 </div>
-                <DialogFooter>
-                    <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
+                <DialogFooter className="gap-2 sm:gap-0">
+                    <Button variant="outline" onClick={onClose} disabled={loading}>Batal</Button>
                     <Button onClick={handleCreate} disabled={loading || !name.trim()}>
-                        {loading ? "Creating..." : "Create Workspace"}
+                        {loading ? "Membuat..." : "Buat Workspace"}
                     </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
-// --------------------------------------------------------------------------
-// INVITE MEMBER MODAL
-// --------------------------------------------------------------------------
-function InviteMemberModal({
-    open,
-    workspaceId,
-    onClose,
-}: {
-    open: boolean;
-    workspaceId: string;
-    onClose: () => void;
-}) {
-    const [email, setEmail] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [inviteToken, setInviteToken] = useState<string | null>(null);
-
-    const handleInvite = async () => {
-        if (!email.trim()) return;
-        setLoading(true);
-        try {
-            const res = await workspaceAPI.inviteMember(workspaceId, { email: email.trim() });
-            setInviteToken(res.data.token);
-            toast.success("Invitation created!");
-        } catch (err: any) {
-            toast.error(err?.response?.data?.detail || "Failed to send invitation");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleClose = () => {
-        setEmail("");
-        setInviteToken(null);
-        onClose();
-    };
-
-    const inviteLink = typeof window !== "undefined" && inviteToken
-        ? `${window.location.origin}/invitations/${inviteToken}`
-        : null;
-
-    return (
-        <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-            <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                    <DialogTitle>Invite Team Member</DialogTitle>
-                    <DialogDescription>
-                        Kirimkan undangan ke anggota tim Anda via email atau link.
-                    </DialogDescription>
-                </DialogHeader>
-                {!inviteToken ? (
-                    <div className="space-y-4 py-2">
-                        <div className="space-y-1.5">
-                            <Label htmlFor="invite-email">Email Address</Label>
-                            <Input
-                                id="invite-email"
-                                type="email"
-                                placeholder="member@company.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && handleInvite()}
-                            />
-                        </div>
-                    </div>
-                ) : (
-                    <div className="space-y-3 py-2">
-                        <p className="text-sm text-muted-foreground">
-                            Invitation link berhasil dibuat. Bagikan link ini kepada <strong>{email}</strong>:
-                        </p>
-                        <div className="flex gap-2">
-                            <Input readOnly value={inviteLink || ""} className="text-xs" />
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                    navigator.clipboard.writeText(inviteLink || "");
-                                    toast.success("Copied!");
-                                }}
-                            >
-                                Copy
-                            </Button>
-                        </div>
-                        <p className="text-xs text-muted-foreground">Link berlaku selama 7 hari.</p>
-                    </div>
-                )}
-                <DialogFooter>
-                    <Button variant="outline" onClick={handleClose}>Close</Button>
-                    {!inviteToken && (
-                        <Button onClick={handleInvite} disabled={loading || !email.trim()}>
-                            <Send className="mr-2 h-4 w-4" />
-                            {loading ? "Sending..." : "Create Invite Link"}
-                        </Button>
-                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>
@@ -223,252 +132,202 @@ function WorkspaceCard({
     onDeleted: () => void;
     onRefresh: () => void;
 }) {
-    const [members, setMembers] = useState<WorkspaceMember[]>([]);
+    const router = useRouter();
+    const { user } = useAuthStore();
+    const { currentWorkspace, setCurrentWorkspace } = useWorkspaceStore();
     const [expanded, setExpanded] = useState(false);
+    const [members, setMembers] = useState<WorkspaceMember[]>([]);
     const [loadingMembers, setLoadingMembers] = useState(false);
     const [showInvite, setShowInvite] = useState(false);
-    const { user } = useAuthStore();
+    const [deleting, setDeleting] = useState(false);
 
-    const fetchMembers = useCallback(async () => {
-        setLoadingMembers(true);
-        try {
-            const res = await workspaceAPI.getMembers(workspace.id);
-            setMembers(res.data);
-        } catch {
-            toast.error("Failed to load members");
-        } finally {
-            setLoadingMembers(false);
+    const isOwner = workspace.role === "owner" || workspace.owner_id === user?.id;
+    const isSelected = currentWorkspace?.id === workspace.id;
+
+    const handleOpenWorkspace = () => {
+        setCurrentWorkspace(workspace);
+        router.push("/dashboard/developer/projects");
+    };
+
+    const toggleMembers = async () => {
+        if (!expanded && members.length === 0) {
+            setLoadingMembers(true);
+            try {
+                const res = await workspaceAPI.getMembers(workspace.id);
+                setMembers(res.data);
+            } catch (err) {
+                toast.error("Gagal memuat daftar anggota");
+            } finally {
+                setLoadingMembers(false);
+            }
         }
-    }, [workspace.id]);
-
-    useEffect(() => {
-        if (expanded) fetchMembers();
-    }, [expanded, fetchMembers]);
+        setExpanded(!expanded);
+    };
 
     const handleDelete = async () => {
-        if (!confirm(`Delete workspace "${workspace.name}"? This cannot be undone.`)) return;
+        if (!confirm(`Apakah Anda yakin ingin menghapus workspace "${workspace.name}"?`)) return;
+        setDeleting(true);
         try {
             await workspaceAPI.deleteWorkspace(workspace.id);
-            toast.success("Workspace deleted");
+            toast.success("Workspace berhasil dihapus");
             onDeleted();
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || "Failed to delete workspace");
+            toast.error(err?.response?.data?.detail || "Gagal menghapus workspace");
+        } finally {
+            setDeleting(false);
         }
     };
 
-    const isOwner = workspace.role === "owner";
-
     return (
-        <>
-            <Card className="hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                                <Building2 className="h-5 w-5 text-primary" />
-                            </div>
-                            <div>
-                                <CardTitle className="text-base">{workspace.name}</CardTitle>
-                                <CardDescription className="text-xs mt-0.5">/{workspace.slug}</CardDescription>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                            <Badge variant={isOwner ? "default" : "secondary"} className="text-xs">
-                                {isOwner ? <Crown className="mr-1 h-3 w-3" /> : null}
-                                {workspace.role}
-                            </Badge>
-                            {isOwner && (
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-7 w-7">
-                                            <MoreVertical className="h-4 w-4" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuItem onClick={() => { setShowInvite(true); }}>
-                                            <Send className="mr-2 h-4 w-4" /> Invite Member
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem
-                                            className="text-destructive focus:text-destructive"
-                                            onClick={handleDelete}
-                                        >
-                                            <Trash2 className="mr-2 h-4 w-4" /> Delete Workspace
-                                        </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            )}
-                        </div>
-                    </div>
-                    {workspace.description && (
-                        <p className="text-sm text-muted-foreground mt-2">{workspace.description}</p>
-                    )}
-                </CardHeader>
-                <CardContent>
-                    <div className="flex items-center justify-between">
-                        <button
-                            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={() => setExpanded(!expanded)}
-                        >
-                            <Users className="h-4 w-4" />
-                            <span>{workspace.member_count} member{workspace.member_count !== 1 ? "s" : ""}</span>
-                        </button>
-                        <Button variant="ghost" size="sm" className="text-xs" onClick={() => setExpanded(!expanded)}>
-                            {expanded ? "Hide" : "View Members"}
-                        </Button>
-                    </div>
-
-                    {expanded && (
-                        <>
-                            <Separator className="my-3" />
-                            {loadingMembers ? (
-                                <div className="space-y-2">
-                                    {[1, 2].map((i) => (
-                                        <div key={i} className="flex items-center gap-3">
-                                            <Skeleton className="h-8 w-8 rounded-full" />
-                                            <div className="space-y-1">
-                                                <Skeleton className="h-3 w-28" />
-                                                <Skeleton className="h-3 w-40" />
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {members.map((m) => (
-                                        <div key={m.id} className="flex items-center gap-3">
-                                            <Avatar className="h-8 w-8">
-                                                <AvatarFallback className="text-xs">
-                                                    {getInitials(m.user_name)}
-                                                </AvatarFallback>
-                                            </Avatar>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium truncate">{m.user_name || "Unknown"}</p>
-                                                <p className="text-xs text-muted-foreground truncate">{m.user_email}</p>
-                                            </div>
-                                            <Badge variant={m.role === "owner" ? "default" : "outline"} className="text-xs shrink-0">
-                                                {m.role}
-                                            </Badge>
-                                        </div>
-                                    ))}
-                                    {isOwner && (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="w-full mt-2"
-                                            onClick={() => setShowInvite(true)}
-                                        >
-                                            <Plus className="mr-2 h-4 w-4" /> Invite Member
-                                        </Button>
-                                    )}
-                                </div>
-                            )}
-                        </>
-                    )}
-                </CardContent>
-            </Card>
-
-            <InviteMemberModal
-                open={showInvite}
-                workspaceId={workspace.id}
-                onClose={() => setShowInvite(false)}
-            />
-        </>
-    );
-}
-
-// --------------------------------------------------------------------------
-// LOADING SKELETONS
-// --------------------------------------------------------------------------
-function WorkspaceSkeleton() {
-    return (
-        <Card>
+        <Card className={`transition-all duration-200 border ${isSelected ? "border-primary shadow-md bg-primary/5" : "hover:border-primary/50 shadow-sm"}`}>
             <CardHeader className="pb-3">
-                <div className="flex items-center gap-3">
-                    <Skeleton className="h-10 w-10 rounded-lg" />
-                    <div className="space-y-2">
-                        <Skeleton className="h-4 w-40" />
-                        <Skeleton className="h-3 w-24" />
+                <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className={`p-2.5 rounded-xl ${isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"}`}>
+                            <Building2 className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <CardTitle className="text-base font-semibold flex items-center gap-2">
+                                {workspace.name}
+                                {isOwner && (
+                                    <Crown className="h-3.5 w-3.5 text-amber-500"  />
+                                )}
+                            </CardTitle>
+                            <CardDescription className="text-xs line-clamp-1 mt-0.5">
+                                {workspace.description || "Tidak ada deskripsi"}
+                            </CardDescription>
+                        </div>
                     </div>
+                    {isOwner && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreVertical className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={handleDelete} className="text-destructive">
+                                    <Trash2 className="mr-2 h-4 w-4" /> Hapus Workspace
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
                 </div>
             </CardHeader>
-            <CardContent>
-                <Skeleton className="h-4 w-32" />
+            <CardContent className="space-y-4">
+                <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t">
+                    <div className="flex items-center gap-2">
+                        <Badge variant={workspace.role === "owner" ? "default" : "secondary"} className="capitalize text-[10px]">
+                            {workspace.role || "Member"}
+                        </Badge>
+                        <span>•</span>
+                        <span>{workspace.member_count || 1} Anggota</span>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                    <Button
+                        size="sm"
+                        className="w-full text-xs font-medium"
+                        variant={isSelected ? "default" : "outline"}
+                        onClick={handleOpenWorkspace}
+                    >
+                        <FolderKanban className="mr-1.5 h-3.5 w-3.5" />
+                        {isSelected ? "Buka Proyek Aktif" : "Pilih & Lihat Proyek"}
+                        <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                    </Button>
+                </div>
             </CardContent>
         </Card>
     );
 }
 
 // --------------------------------------------------------------------------
-// MAIN PAGE
+// MAIN WORKSPACES PAGE
 // --------------------------------------------------------------------------
 export default function WorkspacesPage() {
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showCreate, setShowCreate] = useState(false);
+    const { setWorkspaces: setStoreWorkspaces, setCurrentWorkspace } = useWorkspaceStore();
 
     const fetchWorkspaces = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
             const res = await workspaceAPI.getWorkspaces();
-            setWorkspaces(res.data);
+            const list = res.data || [];
+            setWorkspaces(list);
+            setStoreWorkspaces(list);
         } catch (err: any) {
-            setError(err?.response?.data?.detail || "Failed to load workspaces");
+            setError(err?.response?.data?.detail || "Gagal memuat ruang kerja");
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [setStoreWorkspaces]);
 
     useEffect(() => {
         fetchWorkspaces();
     }, [fetchWorkspaces]);
 
+    const handleCreated = (newWs: Workspace) => {
+        const updated = [...workspaces, newWs];
+        setWorkspaces(updated);
+        setStoreWorkspaces(updated);
+        setCurrentWorkspace(newWs);
+    };
+
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Workspaces</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">Ruang Kerja (Workspaces)</h1>
                     <p className="text-muted-foreground text-sm mt-1">
-                        Kelola organisasi dan tim Anda untuk proyek WebGIS.
+                        Kelola organisasi dan tim Anda untuk proyek analisis lokasi WebGIS & AI.
                     </p>
                 </div>
-                <Button onClick={() => setShowCreate(true)} id="btn-create-workspace">
+                <Button onClick={() => setShowCreate(true)} className="sm:self-auto self-start">
                     <Plus className="mr-2 h-4 w-4" />
-                    New Workspace
+                    + Workspace Baru
                 </Button>
             </div>
 
-            {/* Content */}
+            {/* Content Grid */}
             {loading ? (
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {[1, 2, 3].map((i) => <WorkspaceSkeleton key={i} />)}
+                    {[1, 2, 3].map((i) => (
+                        <Card key={i} className="p-6 space-y-4">
+                            <Skeleton className="h-6 w-1/2" />
+                            <Skeleton className="h-4 w-3/4" />
+                            <Skeleton className="h-9 w-full" />
+                        </Card>
+                    ))}
                 </div>
             ) : error ? (
                 <Card className="border-destructive/50">
                     <CardContent className="pt-6 text-center">
                         <p className="text-destructive text-sm">{error}</p>
                         <Button variant="outline" size="sm" className="mt-3" onClick={fetchWorkspaces}>
-                            Retry
+                            Coba Lagi
                         </Button>
                     </CardContent>
                 </Card>
             ) : workspaces.length === 0 ? (
                 <Card className="border-dashed">
                     <CardContent className="pt-10 pb-10 flex flex-col items-center gap-4 text-center">
-                        <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                            <Building2 className="h-7 w-7 text-muted-foreground" />
+                        <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
+                            <Building2 className="h-7 w-7 text-primary" />
                         </div>
                         <div>
-                            <h3 className="font-semibold text-lg">No Workspaces Yet</h3>
+                            <h3 className="font-semibold text-lg">Belum Ada Workspace</h3>
                             <p className="text-muted-foreground text-sm mt-1 max-w-sm">
-                                Buat workspace pertama Anda untuk mulai mengelola proyek dan mengundang anggota tim.
+                                Buat workspace pertama Anda untuk mulai mengelola proyek properti dan peta GIS.
                             </p>
                         </div>
                         <Button onClick={() => setShowCreate(true)}>
-                            <Plus className="mr-2 h-4 w-4" /> Create Your First Workspace
+                            <Plus className="mr-2 h-4 w-4" /> Buat Workspace Pertama Anda
                         </Button>
                     </CardContent>
                 </Card>
@@ -489,7 +348,7 @@ export default function WorkspacesPage() {
             <CreateWorkspaceModal
                 open={showCreate}
                 onClose={() => setShowCreate(false)}
-                onCreated={fetchWorkspaces}
+                onCreated={handleCreated}
             />
         </div>
     );

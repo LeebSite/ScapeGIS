@@ -1,7 +1,7 @@
 "use client";
 
-import * as React from "react";
-import { Check, ChevronsUpDown, PlusCircle } from "lucide-react";
+import React from "react";
+import { Check, ChevronsUpDown, PlusCircle, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,65 +25,70 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
-    DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuthStore } from "@/lib/store";
-import { workspaceAPI } from "@/lib/api";
+import { Textarea } from "@/components/ui/textarea";
+import { useWorkspaceStore } from "@/lib/store";
+import { workspaceAPI } from "@/lib/api/WorkspaceService";
 import type { Workspace } from "@/lib/types";
+import { toast } from "sonner";
 
 export function WorkspaceSelector() {
     const [open, setOpen] = React.useState(false);
     const [showNewWorkspaceDialog, setShowNewWorkspaceDialog] = React.useState(false);
-    const [workspaces, setWorkspaces] = React.useState<Workspace[]>([]);
-    const [selectedWorkspace, setSelectedWorkspace] = React.useState<Workspace | null>(null);
+    const { workspaces, currentWorkspace, setWorkspaces, setCurrentWorkspace } = useWorkspaceStore();
     const [newWorkspaceName, setNewWorkspaceName] = React.useState("");
+    const [newWorkspaceDesc, setNewWorkspaceDesc] = React.useState("");
     const [isLoading, setIsLoading] = React.useState(false);
-    const [error, setError] = React.useState<string | null>(null);
+    const [isFetching, setIsFetching] = React.useState(false);
 
     // Fetch workspaces on mount
-    React.useEffect(() => {
-        const fetchWorkspaces = async () => {
-            try {
-                setError(null);
-                const res = await workspaceAPI.getWorkspaces();
-                setWorkspaces(res.data);
-                if (res.data.length > 0) {
-                    // Check if there's a stored workspace ID
-                    const storedId = localStorage.getItem("current_workspace_id");
-                    const found = res.data.find(w => w.id === storedId);
-                    setSelectedWorkspace(found || res.data[0]);
-                }
-            } catch (error: any) {
-                console.error("Failed to fetch workspaces:", error);
-                // Check if it's a 404 error (endpoint not implemented)
-                if (error?.response?.status === 404) {
-                    setError("Workspace feature not available");
-                } else {
-                    setError("Failed to load workspaces");
-                }
-            }
-        };
-        fetchWorkspaces();
-    }, []);
+    const fetchWorkspaces = React.useCallback(async () => {
+        setIsFetching(true);
+        try {
+            const res = await workspaceAPI.getWorkspaces();
+            const list: Workspace[] = res.data || [];
+            setWorkspaces(list);
 
-    // Update localStorage when selection changes
-    React.useEffect(() => {
-        if (selectedWorkspace) {
-            localStorage.setItem("current_workspace_id", selectedWorkspace.id);
+            if (list.length > 0) {
+                const storedId = typeof window !== "undefined" ? localStorage.getItem("current_workspace_id") : null;
+                const found = list.find((w) => w.id === storedId);
+                const active = found || list[0];
+                setCurrentWorkspace(active);
+            }
+        } catch (error: any) {
+            console.error("Failed to fetch workspaces:", error);
+        } finally {
+            setIsFetching(false);
         }
-    }, [selectedWorkspace]);
+    }, [setWorkspaces, setCurrentWorkspace]);
+
+    React.useEffect(() => {
+        fetchWorkspaces();
+    }, [fetchWorkspaces]);
 
     const handleCreateWorkspace = async () => {
+        if (!newWorkspaceName.trim()) return;
         setIsLoading(true);
         try {
-            const res = await workspaceAPI.createWorkspace({ name: newWorkspaceName });
-            setWorkspaces([...workspaces, res.data]);
-            setSelectedWorkspace(res.data);
+            const res = await workspaceAPI.createWorkspace({
+                name: newWorkspaceName.trim(),
+                description: newWorkspaceDesc.trim() || undefined,
+            });
+            const createdWorkspace: Workspace = res.data;
+            toast.success(`Workspace "${createdWorkspace.name}" berhasil dibuat!`);
+            
+            // Refresh list & select newly created workspace
+            const updatedList = [...workspaces, createdWorkspace];
+            setWorkspaces(updatedList);
+            setCurrentWorkspace(createdWorkspace);
+            
             setShowNewWorkspaceDialog(false);
             setNewWorkspaceName("");
-        } catch (error) {
+            setNewWorkspaceDesc("");
+        } catch (error: any) {
+            toast.error(error?.response?.data?.detail || "Gagal membuat workspace");
             console.error("Failed to create workspace:", error);
         } finally {
             setIsLoading(false);
@@ -98,47 +103,46 @@ export function WorkspaceSelector() {
                         variant="outline"
                         role="combobox"
                         aria-expanded={open}
-                        className="w-[200px] justify-between"
-                        disabled={!!error}
-                        title={error || undefined}
+                        className="w-[210px] justify-between h-9 text-xs md:text-sm bg-background border-border/80 shadow-sm hover:bg-muted/50"
                     >
-                        {error ? (
-                            <span className="truncate text-muted-foreground">{error}</span>
-                        ) : selectedWorkspace ? (
+                        {currentWorkspace ? (
                             <div className="flex items-center gap-2 truncate">
-                                <span className="truncate font-medium">{selectedWorkspace.name}</span>
+                                <Building2 className="h-4 w-4 text-primary shrink-0" />
+                                <span className="truncate font-medium">{currentWorkspace.name}</span>
                             </div>
-
                         ) : (
-                            "Select workspace..."
+                            <span className="text-muted-foreground">
+                                {isFetching ? "Memuat..." : "Pilih Workspace..."}
+                            </span>
                         )}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[200px] p-0">
+                <PopoverContent className="w-[220px] p-0" align="start">
                     <Command>
-                        <CommandInput placeholder="Search workspace..." />
+                        <CommandInput placeholder="Cari workspace..." />
                         <CommandList>
-                            <CommandEmpty>No workspace found.</CommandEmpty>
-                            <CommandGroup heading="Workspaces">
+                            <CommandEmpty>Workspace tidak ditemukan.</CommandEmpty>
+                            <CommandGroup heading="Daftar Workspace">
                                 {workspaces.map((workspace) => (
                                     <CommandItem
                                         key={workspace.id}
                                         onSelect={() => {
-                                            setSelectedWorkspace(workspace);
+                                            setCurrentWorkspace(workspace);
                                             setOpen(false);
+                                            toast.info(`Berpindah ke workspace "${workspace.name}"`);
                                         }}
-                                        className="text-sm"
+                                        className="text-xs md:text-sm cursor-pointer"
                                     >
                                         <Check
                                             className={cn(
-                                                "mr-2 h-4 w-4",
-                                                selectedWorkspace?.id === workspace.id
+                                                "mr-2 h-4 w-4 text-primary",
+                                                currentWorkspace?.id === workspace.id
                                                     ? "opacity-100"
                                                     : "opacity-0"
                                             )}
                                         />
-                                        {workspace.name}
+                                        <span className="truncate">{workspace.name}</span>
                                     </CommandItem>
                                 ))}
                             </CommandGroup>
@@ -146,46 +150,60 @@ export function WorkspaceSelector() {
                         <CommandSeparator />
                         <CommandList>
                             <CommandGroup>
-                                <DialogTrigger asChild>
-                                    <CommandItem
-                                        onSelect={() => {
-                                            setOpen(false);
-                                            setShowNewWorkspaceDialog(true);
-                                        }}
-                                    >
-                                        <PlusCircle className="mr-2 h-5 w-5" />
-                                        Create Workspace
-                                    </CommandItem>
-                                </DialogTrigger>
+                                <CommandItem
+                                    onSelect={() => {
+                                        setOpen(false);
+                                        setShowNewWorkspaceDialog(true);
+                                    }}
+                                    className="cursor-pointer text-primary font-medium text-xs md:text-sm"
+                                >
+                                    <PlusCircle className="mr-2 h-4 w-4 text-primary" />
+                                    + Workspace Baru
+                                </CommandItem>
                             </CommandGroup>
                         </CommandList>
                     </Command>
                 </PopoverContent>
             </Popover>
-            <DialogContent>
+
+            <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Create Workspace</DialogTitle>
-                    <DialogDescription>
-                        Add a new workspace to manage products and customers.
+                    <DialogTitle className="flex items-center gap-2">
+                        <Building2 className="h-5 w-5 text-primary" />
+                        Buat Workspace Baru
+                    </DialogTitle>
+                    <DialogDescription className="text-xs md:text-sm">
+                        Workspace adalah wadah organisasi untuk mengelompokkan proyek GIS, dataset, dan anggota tim Anda.
                     </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-4 py-2 pb-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="name">Workspace Name</Label>
+                <div className="space-y-4 py-2">
+                    <div className="space-y-1.5">
+                        <Label htmlFor="ws-name-selector">Nama Workspace *</Label>
                         <Input
-                            id="name"
-                            placeholder="Acme Inc."
+                            id="ws-name-selector"
+                            placeholder="Contoh: PT Summarecon Land"
                             value={newWorkspaceName}
                             onChange={(e) => setNewWorkspaceName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleCreateWorkspace()}
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="ws-desc-selector">Deskripsi (Opsional)</Label>
+                        <Textarea
+                            id="ws-desc-selector"
+                            placeholder="Deskripsi tim atau fokus area pengawasan..."
+                            rows={3}
+                            value={newWorkspaceDesc}
+                            onChange={(e) => setNewWorkspaceDesc(e.target.value)}
                         />
                     </div>
                 </div>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => setShowNewWorkspaceDialog(false)}>
-                        Cancel
+                <DialogFooter className="gap-2 sm:gap-0">
+                    <Button variant="outline" onClick={() => setShowNewWorkspaceDialog(false)} disabled={isLoading}>
+                        Batal
                     </Button>
-                    <Button type="submit" onClick={handleCreateWorkspace} disabled={isLoading || !newWorkspaceName}>
-                        {isLoading ? "Creating..." : "Create"}
+                    <Button onClick={handleCreateWorkspace} disabled={isLoading || !newWorkspaceName.trim()}>
+                        {isLoading ? "Membuat..." : "Buat Workspace"}
                     </Button>
                 </DialogFooter>
             </DialogContent>
