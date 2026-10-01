@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { adminRequestMagicLink } from '@/lib/api/authService';
+import { adminRequestMagicLink } from '@/lib/api/AuthService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';

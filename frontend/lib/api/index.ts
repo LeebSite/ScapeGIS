@@ -2,13 +2,7 @@
  * API Services Index
  * 
  * This file exports all API services for easy import throughout the application.
- * 
- * Usage:
- * import { authAPI, adminAPI, aiAPI, subscriptionAPI } from '@/lib/api';
  */
-
-// Note: Auth functions are now exported directly from './authService'
-// Use: import { login, getCurrentUser, etc } from '@/lib/api/authService'
 
 export { adminAPI } from "./AdminService";
 export { aiAPI } from "./AIService";
@@ -18,13 +12,10 @@ export { invitationAPI } from "./InvitationService";
 export { projectAPI } from "./ProjectService";
 export { layerAPI } from "./LayerService";
 
-// Re-export types
-
 export type {
-  UpdateUserStatusRequest,
-  UpdateUserRoleRequest,
-  UserDetail,
-  MessageResponse,
+  User as AdminUser,
+  UserStats,
+  UserDetailResponse,
 } from "./AdminService";
 
 export type {
@@ -37,4 +28,3 @@ export type {
 export type {
   SubscriptionRequestResult,
 } from "./SubscriptionService";
-

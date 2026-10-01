@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { adminVerifyMagicLink } from '@/lib/api/authService';
+import { adminVerifyMagicLink } from '@/lib/api/AuthService';
 import { Button } from '@/components/ui/button';
 
 export default function AdminVerifyPage() {

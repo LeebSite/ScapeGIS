@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { signupVerify, loginVerifyOTP, signupPassword, loginRequestOTP, getCurrentUser } from '@/lib/api/authService';
+import { signupVerify, loginVerifyOTP, signupPassword, loginRequestOTP, getCurrentUser } from '@/lib/api/AuthService';
 import { useAuthStore } from '@/lib/store';
 
 export default function VerifyPage() {
@@ -140,7 +140,7 @@ export default function VerifyPage() {
             if (authType === 'signup') {
                 const password = sessionStorage.getItem('signup_password');
                 // Note: signupPassword requires password? 
-                // Let's check authService.ts. Yes, SignupPasswordRequest needs password if calling /signup/password endpoint.
+                // Let's check AuthService.ts. Yes, SignupPasswordRequest needs password if calling /signup/password endpoint.
                 // But /signup/verify is just verify. Resending usually means calling /signup/password again or a resend endpoint.
                 // User code calls logic: signupPassword({ email, password }). This is correct if we want to trigger a new email.
                 if (!password) {

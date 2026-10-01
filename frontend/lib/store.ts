@@ -29,7 +29,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     // We now use HttpOnly cookies, so we just try to fetch the current user.
     // Ensure we import getCurrentUser from authService.
     try {
-      const { getCurrentUser } = await import("./api/authService");
+      const { getCurrentUser } = await import("./api/AuthService");
       const user = await getCurrentUser();
       set({ user, isAuthenticated: true, isInitialized: true });
     } catch (err) {
@@ -67,5 +67,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     set({ currentWorkspace: workspace });
   },
 }));
+
 
 

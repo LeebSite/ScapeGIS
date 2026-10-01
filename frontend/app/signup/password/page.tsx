@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { signupPassword } from '@/lib/api/authService';
+import { signupPassword } from '@/lib/api/AuthService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 

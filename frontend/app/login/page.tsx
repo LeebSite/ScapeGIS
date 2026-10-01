@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserRole } from "@/lib/types/auth";
 import { getDashboardRoute } from "@/lib/utils";
-import { login, googleOAuth, getCurrentUser, signupInit, adminRequestMagicLink, loginRequestOTP, loginVerifyOTP } from "@/lib/api/authService";
+import { login, googleOAuth, getCurrentUser, signupInit, adminRequestMagicLink, loginRequestOTP, loginVerifyOTP } from "@/lib/api/AuthService";
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 
 type LoginStep = 'email' | 'password' | 'otp' | 'admin-link-sent';

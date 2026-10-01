@@ -1,4 +1,4 @@
-import { fetchAPI } from './authService';
+import { fetchAPI } from './AuthService';
 
 export interface User {
   id: string;
@@ -100,3 +100,4 @@ export const adminAPI = {
   updateUserRole: (userId: string, data: { role: 'admin' | 'developer' }) => updateUserRole(userId, data.role),
   deleteUser: deleteUser
 };
+
