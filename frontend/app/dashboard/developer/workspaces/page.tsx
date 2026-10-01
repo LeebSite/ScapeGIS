@@ -220,7 +220,7 @@ function WorkspaceCard({
                         <Badge variant={workspace.role === "owner" ? "default" : "secondary"} className="capitalize text-[10px]">
                             {workspace.role || "Member"}
                         </Badge>
-                        <span>•</span>
+                        <span></span>
                         <span>{workspace.member_count || 1} Anggota</span>
                     </div>
                 </div>
