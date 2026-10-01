@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Database,
   Building2,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { UserRole } from "@/lib/types";
@@ -30,6 +31,7 @@ const adminNavItems = [
   { href: "/dashboard/admin/projects", label: "Proyek", icon: FolderKanban },
   { href: "/dashboard/admin/maps", label: "Peta Aktif", icon: Map },
   { href: "/dashboard/admin/gis-datasets", label: "GIS Dataset", icon: Database },
+  { href: "/dashboard/admin/gis-access", label: "Akses GIS", icon: ShieldCheck },
   { href: "/dashboard/admin/users", label: "Pengguna", icon: Users },
   { href: "/dashboard/admin/analytics", label: "Analitik", icon: BarChart3 },
   { href: "/dashboard/admin/settings", label: "Pengaturan", icon: Settings },

@@ -43,6 +43,7 @@ export interface WorkspaceInvitation {
 export interface Subscription {
   id: string;
   name: "Free" | "Basic" | "Professional";
+  status?: string;
   max_prompts_per_month: number;
   max_projects: number;
   max_members: number;

@@ -11,6 +11,7 @@ export { workspaceAPI } from "./WorkspaceService";
 export { invitationAPI } from "./InvitationService";
 export { projectAPI } from "./ProjectService";
 export { layerAPI } from "./LayerService";
+export { GISAccessService } from "./GISAccessService";
 
 export type {
   User as AdminUser,
@@ -28,3 +29,11 @@ export type {
 export type {
   SubscriptionRequestResult,
 } from "./SubscriptionService";
+
+export type {
+  GISAccessGrant,
+  GISAccessListResponse,
+  GrantAccessPayload,
+  RevokeAccessPayload,
+  AuthorizedDataset,
+} from "./GISAccessService";
