@@ -1,4 +1,4 @@
-﻿"""
+"""
 Project Service - All business logic for project management.
 Authorization is based on Workspace membership/role.
 """
@@ -41,14 +41,15 @@ def _create_audit_log(
     resource_id: str = None,
     details: dict = None,
 ):
-    ip = request.client.host if request.client else "0.0.0.0"
+    ip = request.client.host if (request and request.client) else "0.0.0.0"
+    user_agent = request.headers.get("user-agent") if request else None
     log = AuditLog(
         user_id=user_id,
         action=action,
         resource_type="project",
         resource_id=resource_id,
         ip_address=ip,
-        user_agent=request.headers.get("user-agent"),
+        user_agent=user_agent,
         details=details,
     )
     db.add(log)
@@ -313,6 +314,14 @@ def add_project_layer(
     dataset = db.query(GISDataset).filter(GISDataset.id == payload.dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+
+    # Verify workspace entitlement: workspace must have access to dataset
+    from app.repositories import gis_access_repository as access_repo
+    if not access_repo.is_accessible(db, project.workspace_id, payload.dataset_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Workspace does not have entitlement to use this GIS dataset",
+        )
 
     # Verify layer exists and belongs to dataset
     layer = db.query(GISLayer).filter(
