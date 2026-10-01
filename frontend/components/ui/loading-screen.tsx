@@ -23,7 +23,7 @@ export function LoadingScreen({
           width={22}
           height={22}
           className="absolute inset-auto"
-          onError={(e) => {
+           onError={(e) => {
             (e.target as HTMLElement).style.display = "none";
           }}
         />
