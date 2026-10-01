@@ -41,8 +41,8 @@ export default function LoginPage() {
 
 			// If password_required, this is an existing user
 			if (response.status === 'password_required') {
-				// ✅ EXISTING USER: Auto-send OTP and redirect to verify page
-				console.log('✅ Existing user detected, sending OTP...');
+				// ? EXISTING USER: Auto-send OTP and redirect to verify page
+				console.log('? Existing user detected, sending OTP...');
 				try {
 					await loginRequestOTP({ email });
 
@@ -50,13 +50,13 @@ export default function LoginPage() {
 					sessionStorage.setItem('auth_email', email);
 					sessionStorage.setItem('auth_type', 'login');
 
-					console.log('✅ OTP sent to:', email);
+					console.log('? OTP sent to:', email);
 					router.push('/signup/verify');
 				} catch (otpErr: any) {
 					// Fallback: If OTP request fails with 404, treat as new user
 					const msg = otpErr.message || '';
 					if (msg.includes('404') || msg.toLowerCase().includes('not found')) {
-						console.log('⚠️ OTP request 404, redirecting to signup...');
+						console.log('?? OTP request 404, redirecting to signup...');
 						sessionStorage.setItem('signup_email', email);
 						router.push('/signup/password');
 						return;
@@ -64,14 +64,14 @@ export default function LoginPage() {
 					setError('Gagal mengirim OTP. Silakan coba lagi.');
 				}
 			} else {
-				// ✅ NEW USER: Redirect to signup password creation
-				console.log('✅ New user detected, redirecting to signup...');
+				// ? NEW USER: Redirect to signup password creation
+				console.log('? New user detected, redirecting to signup...');
 				sessionStorage.setItem('signup_email', email);
 				router.push('/signup/password');
 				return;
 			}
 		} catch (err: any) {
-			// ✅ FIX: Properly extract error message
+			// ? FIX: Properly extract error message
 			let errorMsg = 'Failed to continue';
 
 			if (err instanceof Error) {
@@ -90,11 +90,11 @@ export default function LoginPage() {
 				return;
 			}
 
-			// ✅ Check if "Email already registered" - EXISTING USER!
+			// ? Check if "Email already registered" - EXISTING USER!
 			if (errorMsg.toLowerCase().includes('already registered') ||
 				errorMsg.toLowerCase().includes('already exists')) {
 				// Existing user - send OTP and redirect to verify page
-				console.log('✅ Email already registered, sending OTP...');
+				console.log('? Email already registered, sending OTP...');
 				try {
 					await loginRequestOTP({ email });
 
@@ -102,7 +102,7 @@ export default function LoginPage() {
 					sessionStorage.setItem('auth_email', email);
 					sessionStorage.setItem('auth_type', 'login');
 
-					console.log('✅ OTP sent to:', email);
+					console.log('? OTP sent to:', email);
 					router.push('/signup/verify');
 				} catch (otpErr: any) {
 					let otpErrorMsg = 'Gagal mengirim OTP';
@@ -145,7 +145,7 @@ export default function LoginPage() {
 		setError(null);
 
 		try {
-			// ✅ FIX: Capture tokens and store in localStorage
+			// ? FIX: Capture tokens and store in localStorage
 			const tokens = await login({ email, password });
 
 			if (tokens && tokens.access_token) {
@@ -188,7 +188,7 @@ export default function LoginPage() {
 		setError(null);
 
 		try {
-			// ✅ FIX: Capture tokens and store in localStorage
+			// ? FIX: Capture tokens and store in localStorage
 			const tokens = await googleOAuth({ id_token: credentialResponse.credential });
 
 			if (tokens && tokens.access_token) {
@@ -237,7 +237,7 @@ export default function LoginPage() {
 									<GoogleLogin
 										onSuccess={handleGoogleSuccess}
 										text="continue_with"
-										width="100%"
+										width="350"
 										size="large"
 									/>
 								</div>
@@ -401,7 +401,7 @@ export default function LoginPage() {
 								onClick={() => setStep('email')}
 								className="mt-4"
 							>
-								← Kembali ke login
+								? Kembali ke login
 							</Button>
 						</div>
 					</CardContent>
@@ -412,3 +412,4 @@ export default function LoginPage() {
 
 	return null;
 }
+
