@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -285,7 +285,7 @@ function EditProjectModal({
                     <div className="grid grid-cols-2 gap-3">
                         <div className="grid gap-1.5">
                             <Label>Type</Label>
-                            <Select value={projectType} onValueChange={setProjectType}>
+                            <Select value={projectType} onValueChange={(val) => setProjectType(val as any)}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     {Object.entries(PROJECT_TYPE_LABELS).map(([k, v]) => (
@@ -296,7 +296,7 @@ function EditProjectModal({
                         </div>
                         <div className="grid gap-1.5">
                             <Label>Status</Label>
-                            <Select value={projectStatus} onValueChange={setProjectStatus}>
+                            <Select value={projectStatus} onValueChange={(val) => setProjectStatus(val as any)}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="draft">Draft</SelectItem>
