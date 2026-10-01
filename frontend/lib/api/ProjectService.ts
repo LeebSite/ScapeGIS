@@ -1,79 +1,80 @@
-import http from "./http";
-import type { Project, Layer } from "../types";
-import { API_CONFIG } from "./config";
-import * as mockProject from "@/lib/mocks/projects";
+﻿import http from "./http";
+import type { Project, ProjectDetail, ProjectLayer } from "../types";
 
 export interface CreateProjectRequest {
+    workspace_id: string;
     name: string;
     description?: string;
+    project_type?: string;
+    city?: string;
+    province?: string;
 }
 
 export interface UpdateProjectRequest {
     name?: string;
     description?: string;
+    project_type?: string;
+    city?: string;
+    province?: string;
+    status?: string;
+}
+
+export interface AddProjectLayerRequest {
+    dataset_id: string;
+    layer_id: string;
+}
+
+export interface UpdateProjectLayerRequest {
+    is_visible?: boolean;
+    opacity?: number;
+    layer_order?: number;
+}
+
+export interface ProjectListResponse {
+    items: Project[];
+    total: number;
 }
 
 export const projectAPI = {
-    /**
-     * Get all projects for current user
-     * GET /projects
-     */
-    getProjects: () =>
-        http.get<Project[]>("/projects"),
+    /** GET /projects?workspace_id=... */
+    getProjects: (workspaceId: string) =>
+        http.get<ProjectListResponse>("/projects", { params: { workspace_id: workspaceId } }),
 
-    /**
-     * Create a new project
-     * POST /projects
-     * Requires permission: projects.create
-     */
+    /** POST /projects */
     createProject: (data: CreateProjectRequest) =>
         http.post<Project>("/projects", data),
 
-    /**
-     * Get project by ID
-     * GET /projects/{id}
-     * Requires permission: projects.read
-     */
+    /** GET /projects/{id} */
     getProject: (projectId: string) =>
-        http.get<Project>(`/projects/${projectId}`),
+        http.get<ProjectDetail>(`/projects/${projectId}`),
 
-    /**
-     * Update a project
-     * PUT /projects/{id}
-     * Requires permission: projects.update
-     */
+    /** PATCH /projects/{id} */
     updateProject: (projectId: string, data: UpdateProjectRequest) =>
-        http.put<Project>(`/projects/${projectId}`, data),
+        http.patch<ProjectDetail>(`/projects/${projectId}`, data),
 
-    /**
-     * Delete a project
-     * DELETE /projects/{id}
-     * Requires permission: projects.delete
-     */
+    /** DELETE /projects/{id} */
     deleteProject: (projectId: string) =>
         http.delete<{ message: string }>(`/projects/${projectId}`),
 
-    /**
-     * Get layers assigned to a project
-     * GET /projects/{id}/layers
-     * Requires permission: projects.read
-     */
+    /** POST /projects/{id}/archive */
+    archiveProject: (projectId: string) =>
+        http.post<{ message: string }>(`/projects/${projectId}/archive`, {}),
+
+    // ---- Layer management ----
+
+    /** GET /projects/{id}/layers */
     getProjectLayers: (projectId: string) =>
-        http.get<Layer[]>(`/projects/${projectId}/layers`),
+        http.get<ProjectLayer[]>(`/projects/${projectId}/layers`),
 
-    /**
-     * Assign a layer to a project
-     * POST /projects/{id}/layers
-     * Requires permission: projects.update
-     */
-    assignLayer: (projectId: string, layerId: string) =>
-        http.post<{ message: string }>(`/projects/${projectId}/layers`, { layer_id: layerId }),
+    /** POST /projects/{id}/layers */
+    addProjectLayer: (projectId: string, data: AddProjectLayerRequest) =>
+        http.post<ProjectLayer>(`/projects/${projectId}/layers`, data),
 
-    /**
-     * Remove a layer from a project
-     * DELETE /projects/{id}/layers/{layerId}
-     * Requires permission: projects.update
-     */
-    removeLayer: (projectId: string, layerId: string) =>
+    /** PATCH /projects/{id}/layers/{layerId} */
+    updateProjectLayer: (projectId: string, layerId: string, data: UpdateProjectLayerRequest) =>
+        http.patch<ProjectLayer>(`/projects/${projectId}/layers/${layerId}`, data),
+
+    /** DELETE /projects/{id}/layers/{layerId} */
+    removeProjectLayer: (projectId: string, layerId: string) =>
         http.delete<{ message: string }>(`/projects/${projectId}/layers/${layerId}`),
 };

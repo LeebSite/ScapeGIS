@@ -1,4 +1,4 @@
-// Re-export auth types for backward compatibility
+﻿// Re-export auth types for backward compatibility
 import type { UserRole as AuthUserRole, User as AuthUser } from './types/auth';
 
 export type UserRole = AuthUserRole;
@@ -8,7 +8,12 @@ export type User = AuthUser;
 export interface Workspace {
   id: string;
   name: string;
+  slug?: string;
+  description?: string;
+  logo_url?: string;
   owner_id: string;
+  role?: "owner" | "member";
+  member_count?: number;
   subscription_id?: string;
   created_at: string;
   updated_at: string;
@@ -27,7 +32,7 @@ export interface WorkspaceInvitation {
   id: string;
   workspace_id: string;
   email: string;
-  invited_by: string; // User ID
+  invited_by: string;
   role: "admin" | "member";
   token: string;
   status: "pending" | "accepted" | "expired";
@@ -49,14 +54,42 @@ export interface Subscription {
   };
 }
 
+export type ProjectType = "residential" | "commercial" | "industrial" | "mixed_use" | "other";
+export type ProjectStatus = "draft" | "active" | "archived";
+
 export interface Project {
   id: string;
-  workspace_id: string; // Replaces organization_id
-  created_by: string;
+  workspace_id: string;
+  created_by?: string;
   name: string;
   description?: string;
+  project_type: ProjectType;
+  city?: string;
+  province?: string;
+  status: ProjectStatus;
+  layer_count: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProjectDetail extends Project {
+  workspace_name?: string;
+  creator_name?: string;
+}
+
+export interface ProjectLayer {
+  id: string;
+  project_id: string;
+  dataset_id: string;
+  layer_id: string;
+  name?: string;
+  geometry_type?: string;
+  feature_count: number;
+  bbox?: number[];
+  is_visible: boolean;
+  opacity: number;
+  layer_order: number;
+  created_at: string;
 }
 
 export interface Layer {
@@ -100,7 +133,7 @@ export interface APIError {
   details?: any;
 }
 
-// Map related types (kept from previous version if still relevant, otherwise can be refactored)
+// Map related types
 export interface MapLayer {
   id: string;
   name: string;
@@ -121,5 +154,3 @@ export interface MapData {
   url?: string;
   features?: GeoJSONFeature[];
 }
-
-
