@@ -18,6 +18,16 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from "sonner";
 import { GISAccessService, type GISAccessGrant, type GISAccessWorkspaceInfo, type GISAccessDatasetInfo } from "@/lib/api/GISAccessService";
 
+function formatApiError(err: any, fallback: string): string {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+        return detail.map((d: any) => d?.msg || (typeof d === "string" ? d : JSON.stringify(d))).join(", ");
+    }
+    if (typeof err?.message === "string") return err.message;
+    return fallback;
+}
+
 export default function GISAccessManagementPage() {
     const [grants, setGrants] = useState<GISAccessGrant[]>([]);
     const [loading, setLoading] = useState(true);
@@ -37,10 +47,10 @@ export default function GISAccessManagementPage() {
     const fetchGrants = useCallback(async () => {
         try {
             setLoading(true);
-            const res = await GISAccessService.listAllGrants({ limit: 200 });
+            const res = await GISAccessService.listAllGrants({ limit: 100 });
             setGrants(res.items || []);
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || "Gagal memuat daftar akses GIS");
+            toast.error(formatApiError(err, "Gagal memuat daftar akses GIS"));
         } finally {
             setLoading(false);
         }
@@ -84,7 +94,7 @@ export default function GISAccessManagementPage() {
             setGrantNotes("");
             fetchGrants();
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || "Gagal memberikan akses GIS");
+            toast.error(formatApiError(err, "Gagal memberikan akses GIS"));
         } finally {
             setIsSubmitting(false);
         }
@@ -104,7 +114,7 @@ export default function GISAccessManagementPage() {
             setRevokeReason("");
             fetchGrants();
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || "Gagal mencabut akses GIS");
+            toast.error(formatApiError(err, "Gagal mencabut akses GIS"));
         } finally {
             setIsRevoking(false);
         }
@@ -319,7 +329,7 @@ export default function GISAccessManagementPage() {
                                                         await GISAccessService.grantAccess({ workspace_id: grant.workspace_id, dataset_id: grant.dataset_id, notes: "Re-activated by admin" });
                                                         toast.success("Akses berhasil diaktifkan kembali!");
                                                         fetchGrants();
-                                                    } catch (err: any) { toast.error(err?.response?.data?.detail || "Gagal"); }
+                                                    } catch (err: any) { toast.error(formatApiError(err, "Gagal memulihkan akses")); }
                                                 }} className="h-8 px-2.5 text-xs text-primary hover:bg-primary/10 gap-1">
                                                     <CheckCircle2 className="h-3.5 w-3.5" /> Pulihkan
                                                 </Button>

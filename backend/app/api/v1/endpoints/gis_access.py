@@ -1,4 +1,4 @@
-"""
+﻿"""
 GIS Access / Grant Endpoints
 Handles administrative entitlement grants and workspace-scoped GIS dataset access
 """
@@ -55,7 +55,7 @@ def get_all_datasets_for_grant(
 @admin_router.get("", response_model=GISAccessListResponse)
 def list_all_access_grants(
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100),
+    limit: int = Query(100, ge=1, le=500),
     workspace_id: Optional[UUID] = Query(None, description="Filter by workspace"),
     dataset_id: Optional[UUID] = Query(None, description="Filter by dataset"),
     active_only: Optional[bool] = Query(None, description="Filter active status"),
