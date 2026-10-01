@@ -27,6 +27,7 @@ class Workspace(Base):
     owner = relationship("User", foreign_keys=[owner_id])
     members = relationship("WorkspaceMember", back_populates="workspace", cascade="all, delete-orphan")
     invitations = relationship("WorkspaceInvitation", back_populates="workspace", cascade="all, delete-orphan")
+    gis_accesses = relationship("WorkspaceGISAccess", back_populates="workspace", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_workspaces_owner_id", "owner_id"),

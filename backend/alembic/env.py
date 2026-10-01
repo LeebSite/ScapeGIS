@@ -20,14 +20,16 @@ from app.db.models import (
     User, OAuthAccount, RefreshToken, AuditLog,
     Permission, RolePermission, UserPermission,
     Session, MagicLink, EmailVerification,
-    GISDataset, GISLayer  # GIS models
+    GISDataset, GISLayer, GISFeature,
+    Workspace, WorkspaceMember, WorkspaceInvitation,
+    Project, ProjectLayer, WorkspaceGISAccess
 )
 
-# 🔥 INI YANG PALING PENTING
+# Target metadata for 'autogenerate'
 target_metadata = Base.metadata
 
 
-# 🔒 Exclude tabel PostGIS bawaan
+# Exclude PostGIS system tables
 def include_object(object, name, type_, reflected, compare_to):
     if type_ == "table" and name == "spatial_ref_sys":
         return False

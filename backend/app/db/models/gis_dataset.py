@@ -49,3 +49,4 @@ class GISDataset(Base):
     # Relationships
     user = relationship("User", back_populates="gis_datasets")
     layers = relationship("GISLayer", back_populates="dataset", cascade="all, delete-orphan")
+    workspace_accesses = relationship("WorkspaceGISAccess", back_populates="dataset", cascade="all, delete-orphan")
