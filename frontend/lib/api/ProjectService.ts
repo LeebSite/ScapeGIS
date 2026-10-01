@@ -1,4 +1,4 @@
-﻿import http from "./http";
+import http from "./http";
 import type { Project, ProjectDetail, ProjectLayer } from "../types";
 
 export interface CreateProjectRequest {
@@ -8,6 +8,9 @@ export interface CreateProjectRequest {
     project_type?: string;
     city?: string;
     province?: string;
+    center_lat?: number;
+    center_lng?: number;
+    zoom?: number;
 }
 
 export interface UpdateProjectRequest {

@@ -5,7 +5,6 @@ export default function DashboardLoading() {
     <LoadingScreen
       fullScreen={false}
       message="Memuat Dashboard & Data Spatial ScapeGIS..."
-      subtext="Menyiapkan statistik workspace, proyek, dan peta geospasial Anda."
     />
   );
 }
