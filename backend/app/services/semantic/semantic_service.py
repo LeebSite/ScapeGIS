@@ -48,7 +48,7 @@ def get_semantics_for_workspace(
             WorkspaceGISAccess.workspace_id == workspace_id,
             WorkspaceGISAccess.is_active == True,
         )
-        .subquery()
+        .scalar_subquery()
     )
 
     q = (
