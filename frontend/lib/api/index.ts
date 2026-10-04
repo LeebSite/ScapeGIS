@@ -1,4 +1,4 @@
-/**
+﻿/**
  * API Services Index
  * 
  * This file exports all API services for easy import throughout the application.
@@ -12,6 +12,7 @@ export { invitationAPI } from "./InvitationService";
 export { projectAPI } from "./ProjectService";
 export { layerAPI } from "./LayerService";
 export { GISAccessService } from "./GISAccessService";
+export { SpatialService, default as spatialAPI } from "./SpatialService";
 
 export type {
   User as AdminUser,
@@ -37,3 +38,19 @@ export type {
   RevokeAccessPayload,
   AuthorizedDataset,
 } from "./GISAccessService";
+
+export type {
+  LayerSemanticResponse,
+  NearestRequest,
+  RadiusRequest,
+  SpatialContextRequest,
+  NearestFeatureResult,
+  RadiusSearchResult,
+  RadiusFeature,
+  SpatialContextResponse,
+  SpatialFactItem,
+  ContainmentRequest,
+  ContainmentResult,
+  IntersectionRequest,
+  SemanticSeedResponse,
+} from "./SpatialService";

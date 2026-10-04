@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
-    ArrowLeft, Layers, Plus, Eye, EyeOff, Trash2,
+    ArrowLeft, Layers, Plus, Eye, EyeOff, Trash2, Crosshair,
     Map as MapIcon, MapPin, Building2, Loader2, Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +33,7 @@ import type { GISDataset, GISLayer as GISLayerType, GeoJSONFeatureCollection } f
 
 // Dynamically import MapLibre to avoid SSR issues
 const MapboxMap = dynamic(() => import("@/components/gis/mapbox-map"), { ssr: false });
+const SpatialAnalysisPanel = dynamic(() => import("@/components/gis/spatial-analysis-panel"), { ssr: false });
 
 const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
     residential: "Residential",
@@ -338,6 +339,11 @@ export default function ProjectDetailPage() {
     const [project, setProject] = useState<ProjectDetail | null>(null);
     const [layers, setLayers] = useState<ProjectLayer[]>([]);
     const [geojson, setGeojson] = useState<GeoJSONFeatureCollection | null>(null);
+    const [selectedLocation, setSelectedLocation] = useState<{ latitude: number; longitude: number } | null>({
+        latitude: 0.5071,
+        longitude: 101.4478,
+    });
+    const [highlightFeatures, setHighlightFeatures] = useState<GeoJSONFeatureCollection | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showAddLayer, setShowAddLayer] = useState(false);
@@ -397,6 +403,11 @@ export default function ProjectDetailPage() {
     useEffect(() => {
         if (layers.length > 0) loadGeoJSON(layers);
     }, [layers, loadGeoJSON]);
+
+    const handleMapClick = (coords: { latitude: number; longitude: number }) => {
+        setSelectedLocation(coords);
+        toast.info(`Koordinat analisis: [${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}]`);
+    };
 
     const handleLayerRefresh = () => {
         fetchLayers();
@@ -471,24 +482,30 @@ export default function ProjectDetailPage() {
                 <div className="lg:col-span-3">
                     <Card>
                         <CardContent className="p-0 overflow-hidden rounded-lg">
-                            {layers.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center h-[500px] bg-muted/30 text-center">
-                                    <MapIcon className="h-12 w-12 text-muted-foreground/30 mb-4" />
-                                    <h3 className="font-semibold">No GIS Layers</h3>
-                                    <p className="text-muted-foreground text-sm mt-1 max-w-sm">
-                                        No GIS layers have been added to this project yet.
-                                    </p>
-                                    {isOwner && (
-                                        <Button variant="outline" size="sm" className="mt-4" onClick={() => setShowAddLayer(true)}>
-                                            <Plus className="mr-2 h-4 w-4" /> Add Layer
-                                        </Button>
-                                    )}
+                            <div style={{ height: "500px" }} className="relative">
+                                <MapboxMap
+                                    geojson={geojson}
+                                    selectedLocation={selectedLocation}
+                                    onMapClick={handleMapClick}
+                                    highlightFeatures={highlightFeatures}
+                                    height="500px"
+                                />
+                                <div className="absolute top-3 left-3 bg-background/90 backdrop-blur-sm border shadow-sm px-3 py-1.5 rounded-md text-xs flex items-center gap-2 pointer-events-none z-10">
+                                    <Crosshair className="w-3.5 h-3.5 text-primary animate-pulse" />
+                                    <span>Klik peta untuk menentukan titik analisis</span>
                                 </div>
-                            ) : (
-                                <div style={{ height: "500px" }}>
-                                    <MapboxMap geojson={geojson} />
-                                </div>
-                            )}
+                                {layers.length === 0 && (
+                                    <div className="absolute bottom-3 left-3 bg-background/90 backdrop-blur-sm border shadow-sm px-3 py-2 rounded-md text-xs flex items-center gap-2 z-10">
+                                        <Layers className="w-4 h-4 text-muted-foreground" />
+                                        <span className="text-muted-foreground">Belum ada layer GIS pada proyek ini.</span>
+                                        {isOwner && (
+                                            <Button size="sm" variant="outline" className="h-6 text-[10px] ml-1" onClick={() => setShowAddLayer(true)}>
+                                                + Tambah Layer
+                                            </Button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
@@ -532,6 +549,19 @@ export default function ProjectDetailPage() {
                     </Card>
                 </div>
             </div>
+
+            {/* Spatial Knowledge Analysis Panel (Module 1) */}
+            {project?.workspace_id && (
+                <div className="pt-2">
+                    <SpatialAnalysisPanel
+                        workspaceId={project.workspace_id}
+                        projectId={projectId}
+                        selectedLocation={selectedLocation}
+                        onLocationSelect={(coords: any) => setSelectedLocation(coords)}
+                        onHighlightFeatures={(fc: any) => setHighlightFeatures(fc)}
+                    />
+                </div>
+            )}
 
             {/* Modals */}
             <AddLayerModal
