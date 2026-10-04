@@ -1,4 +1,4 @@
-from logging.config import fileConfig
+﻿from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 from alembic import context
@@ -22,7 +22,8 @@ from app.db.models import (
     Session, MagicLink, EmailVerification,
     GISDataset, GISLayer, GISFeature,
     Workspace, WorkspaceMember, WorkspaceInvitation,
-    Project, ProjectLayer, WorkspaceGISAccess
+    Project, ProjectLayer, WorkspaceGISAccess,
+    LayerSemantic
 )
 
 # Target metadata for 'autogenerate'

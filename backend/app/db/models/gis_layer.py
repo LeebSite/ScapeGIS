@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Text, Integer, ForeignKey, JSON
+﻿from sqlalchemy import Column, String, Boolean, DateTime, Text, Integer, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -49,3 +49,4 @@ class GISLayer(Base):
     # Relationships
     dataset = relationship("GISDataset", back_populates="layers")
     features = relationship("GISFeature", back_populates="layer", cascade="all, delete-orphan")
+    semantic = relationship("LayerSemantic", back_populates="layer", uselist=False, cascade="all, delete-orphan")
