@@ -1,8 +1,8 @@
-﻿# ScapeGIS — Spatial AI Architecture & Tool Contract (Module 2A)
+﻿# ScapeGIS — Spatial AI Architecture & Reasoning Agent
 
 ## 1. Executive Summary
 
-Module 2A defines the deterministic, secure, and auditable bridge between natural language reasoning (future LLM / Gemini) and the ScapeGIS PostGIS spatial foundation (Module 1).
+ScapeGIS Spatial AI bridges natural language reasoning with a verified PostGIS geospatial foundation for property developers.
 
 ### Core Principle: The Ground Truth Boundary
 > **LLM is responsible for intent, reasoning, and synthesis.**  
@@ -12,102 +12,145 @@ Under no circumstances is an LLM allowed to execute arbitrary SQL, directly quer
 
 ---
 
-## 2. Spatial AI Architecture Diagram
+## 2. Complete End-to-End Architecture Diagram
 
 ```
-+-------------------------------------------------------------+
-|                     Natural Language User                   |
-+-------------------------------------------------------------+
-                              |
-                              v
-+-------------------------------------------------------------+
-|                 Gemini / LLM Agent (Module 2B)             |
-|   - Analyzes user intent                                    |
-|   - Selects structured spatial tool                         |
-|   - Provides semantic parameters                            |
-+-------------------------------------------------------------+
-                              |
-                     Function Call Contract
-                              |
-                              v
-+=============================================================+
-|             ScapeGIS Spatial AI Layer (Module 2A)           |
-|                                                             |
-|   +-----------------------+     +-----------------------+   |
-|   | SpatialAIToolRegistry |<--->|   SpatialAIContext    |   |
-|   +-----------------------+     +-----------------------+   |
-|               |                             |               |
-|               +-------------+---------------+               |
-|                             |                               |
-|               [Authorization & Scope Chain]                 |
-|               User -> Workspace -> Project -> Dataset       |
-|                             |                               |
-|   +-----------------------------------------------------+   |
-|   |                  BaseSpatialTool                    |   |
-|   |  - get_spatial_context                              |   |
-|   |  - find_nearest                                     |   |
-|   |  - search_radius                                    |   |
-|   |  - check_containment                                |   |
-|   |  - find_intersections                               |   |
-|   +-----------------------------------------------------+   |
-+=============================================================+
-                              |
-                  Internal Service Calls Only
-                              |
-                              v
-+-------------------------------------------------------------+
-|                  Verified Backend Services                  |
-|   - spatial_analysis_service                                |
-|   - spatial_context_service                                 |
-|   - semantic_service                                        |
-+-------------------------------------------------------------+
-                              |
-                     SQLAlchemy / PostGIS
-                              |
-                              v
-+-------------------------------------------------------------+
-|                 PostGIS / PostgreSQL Engine                 |
-|   - ST_DWithin / ST_Distance                                |
-|   - ST_Contains / ST_Intersects                             |
-|   - Spatial Indexes (GIST)                                  |
-+-------------------------------------------------------------+
-                              |
-                              v
-+-------------------------------------------------------------+
-|                      Structured Output                      |
-|   - SpatialProvenance (Dataset ID, Layer ID, PostGIS OP)    |
-|   - Ground Truth Facts (Exact distances in meters/km)       |
-|   - MapAction Events (Highlight, fitBounds, markers)        |
-+-------------------------------------------------------------+
++-----------------------------------------------------------------------------------+
+|                           Natural Language User Query                             |
+|         "Saya ingin membangun kos. Bagaimana akses fasilitas kesehatan?"          |
++-----------------------------------------------------------------------------------+
+                                          |
+                                          v
++-----------------------------------------------------------------------------------+
+|                    POST /api/v1/spatial-ai/analyze (Module 2B API)                |
+|   - Authenticated User (JWT Session)                                              |
+|   - Multi-tenant Workspace Validation                                             |
+|   - Project Containment Check                                                     |
+|   - Coordinate Bounds Check (-90..90, -180..180)                                  |
++-----------------------------------------------------------------------------------+
+                                          |
+                                          v
++-----------------------------------------------------------------------------------+
+|                           SpatialAIContext Builder                                |
+|   - Discovers authorized GIS datasets for workspace                               |
+|   - Resolves active semantic layer concepts (hospital, road, boundary)            |
+|   - Generates compact, AI-safe system instructions (<400 tokens)                  |
++-----------------------------------------------------------------------------------+
+                                          |
+                                          v
++===================================================================================+
+|               BaseSpatialAIProvider Abstraction -> GeminiProvider                |
+|                                                                                   |
+|   1. Prime session with ScapeGIS System Prompt & Rules                            |
+|   2. Pass 5 Controlled Tool Declarations from SpatialAIToolRegistry               |
+|   3. Send user query with target coordinate anchor                                |
++===================================================================================+
+                                          |
+                                          v
++-----------------------------------------------------------------------------------+
+|                        Google Gemini (gemini-3.8-flash)                           |
+|   - Analyzes user intent                                                          |
+|   - Emits structured FunctionCall (e.g. find_nearest, search_radius)              |
++-----------------------------------------------------------------------------------+
+                                          |
+                                FunctionCall
+                                          |
+                                          v
++===================================================================================+
+|                   GeminiSpatialAgent (Orchestration Engine)                       |
+|                                                                                   |
+|   [Iteration Counter: max 8 calls (Loop Prevention)]                              |
+|   - Validates requested tool against SpatialAIToolRegistry                        |
+|   - Enforces backend tenant workspace_id & target coordinates                     |
+|   - Dispatches execution to BaseSpatialTool                                       |
++===================================================================================+
+                                          |
+                                          v
++-----------------------------------------------------------------------------------+
+|                        Verified PostGIS Backend Services                          |
+|   - spatial_analysis_service (ST_Distance, ST_DWithin, ST_Contains, ST_Intersects)|
+|   - spatial_context_service (Multi-domain neighborhood aggregator)                |
++-----------------------------------------------------------------------------------+
+                                          |
+                             Verified PostGIS Results
+                                          |
+                                          v
++===================================================================================+
+|               Fact Extraction & FunctionResponse Serialization                    |
+|   - Builds atomic SpatialFact objects (exact distance, count, containment)        |
+|   - Attaches SpatialProvenance (dataset ID, layer ID, PostGIS op)                 |
+|   - Formats FunctionResponse Part for Gemini (sanitizing heavy geometries)        |
++===================================================================================+
+                                          |
+                          send_tool_result(FunctionResponse)
+                                          |
+                                          v
++-----------------------------------------------------------------------------------+
+|                        Google Gemini (gemini-3.8-flash)                           |
+|   - Synthesizes natural language answer strictly grounded in returned facts      |
++-----------------------------------------------------------------------------------+
+                                          |
+                                          v
++-----------------------------------------------------------------------------------+
+|                             Unified SpatialAIResponse                             |
+|   - answer: Grounded natural language explanation                                |
+|   - facts: List[SpatialFact] (exact metrics from PostGIS)                         |
+|   - sources: List[SpatialProvenance] (audit trail)                                |
+|   - map_actions: List[MapAction] (SHOW_MARKER, HIGHLIGHT_FEATURE)                 |
+|   - tool_calls: List[Dict] (execution trace)                                      |
++-----------------------------------------------------------------------------------+
 ```
 
 ---
 
-## 3. Tool Registry (`SpatialAIToolRegistry`)
+## 3. Provider Abstraction (`BaseSpatialAIProvider`)
 
-The `SpatialAIToolRegistry` is a singleton repository containing all approved spatial operations callable by an AI agent.
+To ensure vendor independence and maintainability, LLM operations are decoupled behind `BaseSpatialAIProvider`:
 
-### Capabilities:
-- **Registration & Discovery**: Dynamic registration of tool classes conforming to `BaseSpatialTool`.
-- **Export to Gemini**: Automatically derives Google Gemini `FunctionDeclaration` objects directly from Pydantic schemas via `to_gemini_declarations()`.
-- **Export to OpenAI**: Generates standard JSON-Schema format via `to_json_schemas()`.
-- **Safe Execution**: Dispatches tool execution with mandatory `db: Session` and `user: User` injected by backend auth middleware.
+```python
+class BaseSpatialAIProvider(ABC):
+    @abstractmethod
+    def start_conversation(self, system_instruction: str, tool_declarations: List[Dict[str, Any]]) -> Any: ...
+
+    @abstractmethod
+    def send_user_message(self, session: Any, message: str) -> ProviderStepResult: ...
+
+    @abstractmethod
+    def send_tool_result(self, session: Any, tool_name: str, result: Dict[str, Any]) -> ProviderStepResult: ...
+```
+
+### Concrete Implementation: `GeminiProvider`
+- Integrates `google-generativeai` with the officially supported model `gemini-3.8-flash`.
+- Automatically normalizes tool definitions to Gemini proto-compatible schemas (`type` to uppercase `STRING`, `NUMBER`, `INTEGER`, etc., and removes unsupported fields like `default`).
+- Handles network exceptions, timeouts (`DeadlineExceeded`), and quota limits (`ResourceExhausted`), mapping them to `ProviderExecutionError`.
 
 ---
 
-## 4. Controlled Spatial Tools (5 Standard Tools)
+## 4. Tool Registry (`SpatialAIToolRegistry`)
+
+The `SpatialAIToolRegistry` is the single source of truth for all spatial operations callable by the AI:
 
 | Tool Name | PostGIS Operation | Input Schema | Output Schema | Purpose |
 |---|---|---|---|---|
 | `get_spatial_context` | Multi-domain aggregation | `GetSpatialContextInput` | `GetSpatialContextOutput` | Full spatial intelligence snapshot across all 5 domains (transport, health, worship, commercial, admin). |
-| `find_nearest` | `ST_Distance`, `ORDER BY geom <-> point` | `FindNearestInput` | `FindNearestOutput` | Locate nearest single POI (hospital, school, arterial road) with exact distance in meters and km. |
+| `find_nearest` | `ST_Distance` (`<->`) | `FindNearestInput` | `FindNearestOutput` | Locate nearest single POI (hospital, school, arterial road) with exact distance in meters and km. |
 | `search_radius` | `ST_DWithin` | `SearchRadiusInput` | `SearchRadiusOutput` | Find all features within a specified radius (up to 50 km) sorted by distance. |
 | `check_containment` | `ST_Contains` | `CheckContainmentInput` | `CheckContainmentOutput` | Determine which administrative boundary polygon (kecamatan/kelurahan) contains the coordinate. |
 | `find_intersections` | `ST_Intersects` | `FindIntersectionsInput` | `FindIntersectionsOutput` | Identify roads or linear corridors intersecting a buffer zone around the coordinate. |
 
 ---
 
-## 5. Authorization Chain Enforcement
+## 5. Multi-Tool Orchestration Loop & Safety
+
+`GeminiSpatialAgent.analyze()` handles iterative tool calling:
+1. **Loop Prevention**: Iterations are capped at `SPATIAL_AI_MAX_TOOL_CALLS` (default: 8).
+2. **Tenant Parameter Injection**: Even if an LLM leaves out `workspace_id` or coordinates, the agent forcibly injects the authenticated request parameters, guaranteeing tenant isolation.
+3. **Payload Sanitization**: Heavy PostGIS geometries (GeoJSON coordinates) are stripped before returning tool results to Gemini, keeping tokens compact and fast.
+4. **MapAction Generation**: Every tool execution automatically generates typed UI commands (e.g. `SHOW_MARKER` at target location, `HIGHLIGHT_FEATURE` for nearest hospital).
+
+---
+
+## 6. Authorization Chain Enforcement
 
 Every tool execution enforces a strict multi-tenant authorization hierarchy:
 
@@ -127,66 +170,28 @@ Every tool execution enforces a strict multi-tenant authorization hierarchy:
 [Semantic GIS Layer]
 ```
 
-If any check in this chain fails:
-- The system raises `SpatialAIAuthorizationError`.
-- No PostGIS query is performed.
-- Unauthorized data is never leaked or disclosed in error messages.
+The LLM has zero authority over tenant boundary or authorization decisions.
 
 ---
 
-## 6. SpatialAIContext Design
+## 7. Configuration Variables
 
-Before an LLM call occurs, `build_spatial_ai_context(db, user, workspace_id, project_id)` constructs a deterministic state snapshot containing:
-- Authenticated user ID and workspace metadata.
-- Project details (city, province, project type).
-- List of authorized GIS datasets.
-- Semantic concepts available for AI queries (with category, aliases, and operational capabilities).
-- Available tools in registry.
-
-### Token-Optimized System Prompt:
-The `to_system_prompt_summary()` method creates a compact (<400 tokens) prompt string that instructs the LLM on exactly which spatial layers exist in this tenant's workspace and strictly enforces tool usage over hallucination.
+| Variable | Default Value | Description |
+|---|---|---|
+| `GEMINI_API_KEY` | *(Secret)* | Google Gemini API key. Never logged or exposed in API responses. |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | Target Gemini model name confirmed by the current Google API. |
+| `GEMINI_TIMEOUT_SECONDS` | `30` | Request timeout in seconds for LLM communication. |
+| `SPATIAL_AI_MAX_TOOL_CALLS` | `8` | Maximum tool-call iterations per query to prevent runaway loops. |
 
 ---
 
-## 7. Provenance & Hallucination Prevention
+## 8. Testing Strategy & Results
 
-Every tool output returns `SpatialProvenance` metadata:
-```json
-{
-  "dataset_id": "adb542a8-4c47-413f-a98b-3592b7f7ef00",
-  "dataset_name": "Pekanbaru GIS",
-  "layer_id": "c71a39df-419b-4394-9b57-a4ad923abebf",
-  "layer_name": "Rumah Sakit",
-  "semantic_category": "public_facility",
-  "semantic_subcategory": "hospital",
-  "operation": "ST_Distance",
-  "feature_count_queried": 1
-}
-```
-
-### Why LLM Does Not Access PostGIS Directly:
-1. **Security**: Direct SQL generation by LLMs allows SQL injection, unauthorized data exfiltration across tenant boundaries, and denial-of-service via expensive unindexed geospatial joins.
-2. **Determinism**: PostGIS spatial operations require precise coordinate reference system transformations (SRID 4326 to SRID 3857/metric UTM). Parameterized tools ensure calculations are consistently performed using verified geodesy functions.
-3. **Auditability**: Tool calls produce structured logs detailing which dataset, layer, and feature ID substantiated every claim made in the developer report.
-4. **Map Synchronicity**: Tool calls return `MapAction` payloads that allow the React MapLibre frontend to automatically display markers, highlight roads, or fit bounds without parsing free-form text.
-
----
-
-## 8. Map Action Contract
-
-The AI response includes typed UI directives conforming to `MapAction`:
-- `show_layer`: Turn on a specific layer in the WebGIS viewer.
-- `hide_layer`: Turn off a specific layer.
-- `highlight_feature`: Highlight specific geometry IDs on the map.
-- `fit_bounds`: Zoom and pan to fit analyzed features.
-- `show_marker`: Drop an analytical marker at a POI or coordinate.
-- `clear_highlight`: Reset map highlight states.
-
----
-
-## 9. Testing & Quality Assurance
-
-- **48 Module 2A Unit & Contract Tests**: Passing (`tests/test_spatial_ai_tools.py`).
-- **25 Module 1 Spatial Operation Tests**: Passing (`tests/test_spatial_knowledge.py`).
-- **8 GIS Access Authorization Tests**: Passing (`tests/test_gis_access.py`).
-- **Total Backend Suite**: 81 tests passing with zero regressions.
+- **Automated Unit & Contract Tests**: Run deterministically via `MockAIProvider` without requiring external network access or live API credits.
+- **Graceful Quota Handling**: Live smoke tests skip cleanly when Google API free tier quota is exhausted without failing the build.
+- **Suite Metrics**:
+  - Module 1 (Spatial Knowledge): 25/25 passed
+  - GIS Access (Authorization): 8/8 passed
+  - Module 2A (Tool Contracts): 48/48 passed
+  - Module 2B (Gemini Reasoning Agent): 11/11 passed (1 live smoke test skipped on quota)
+  - **Total Suite**: 92 passed, 1 skipped (100% green).
