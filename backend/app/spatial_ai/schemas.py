@@ -1,4 +1,4 @@
-"""
+﻿"""
 Spatial AI Schemas and Tool Contracts
 
 Defines all input, output, provenance, intent, map action,
@@ -11,14 +11,14 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
-# ── Coordinates ──
+# â”€â”€ Coordinates â”€â”€
 
 class CoordinateTarget(BaseModel):
     latitude: float = Field(..., ge=-90.0, le=90.0, description="Latitude (WGS 84)")
     longitude: float = Field(..., ge=-180.0, le=180.0, description="Longitude (WGS 84)")
 
 
-# ── Provenance / Source Attribution ──
+# â”€â”€ Provenance / Source Attribution â”€â”€
 
 class SpatialProvenance(BaseModel):
     """
@@ -38,7 +38,7 @@ class SpatialProvenance(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# ── Tool Input Schemas ──
+# â”€â”€ Tool Input Schemas â”€â”€
 
 class FindNearestInput(BaseModel):
     """Input parameters for find_nearest spatial tool."""
@@ -90,7 +90,7 @@ class FindIntersectionsInput(BaseModel):
     limit: int = Field(20, gt=0, le=50, description="Maximum number of features")
 
 
-# ── Tool Output Schemas ──
+# â”€â”€ Tool Output Schemas â”€â”€
 
 class NearestFeatureDetails(BaseModel):
     feature_id: str
@@ -167,7 +167,7 @@ class GetSpatialContextOutput(BaseModel):
     error: Optional[str] = None
 
 
-# ── Natural Language Tool Intent ──
+# â”€â”€ Natural Language Tool Intent â”€â”€
 
 class ToolIntent(BaseModel):
     """
@@ -182,7 +182,7 @@ class ToolIntent(BaseModel):
     reasoning: Optional[str] = Field(None, description="Explanation for selecting this tool")
 
 
-# ── Map Action Contract ──
+# â”€â”€ Map Action Contract â”€â”€
 
 class MapActionType(str, Enum):
     SHOW_LAYER = "show_layer"
@@ -206,7 +206,7 @@ class MapAction(BaseModel):
     properties: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
-# ── Structured Spatial Facts ──
+# â”€â”€ Structured Spatial Facts â”€â”€
 
 class SpatialFact(BaseModel):
     """
@@ -223,7 +223,7 @@ class SpatialFact(BaseModel):
     dataset_id: Optional[str] = None
 
 
-# ── AI Response Contract ──
+# â”€â”€ AI Response Contract â”€â”€
 
 class SpatialAIResponse(BaseModel):
     """
@@ -238,3 +238,17 @@ class SpatialAIResponse(BaseModel):
     tool_calls: List[Dict[str, Any]] = Field(default_factory=list, description="Audit trace of tools called")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     model: Optional[str] = Field(None, description="AI model that generated the answer")
+
+
+# ── Analysis Request Contract ──
+
+class SpatialAIAnalysisRequest(BaseModel):
+    """
+    Request payload for the spatial AI analysis endpoint.
+    Used for synchronous reasoning and tool execution.
+    """
+    workspace_id: UUID = Field(..., description="Workspace ID for scoping multi-tenant access")
+    project_id: Optional[UUID] = Field(None, description="Optional project context ID")
+    latitude: float = Field(..., ge=-90.0, le=90.0, description="Target location latitude (-90 to 90)")
+    longitude: float = Field(..., ge=-180.0, le=180.0, description="Target location longitude (-180 to 180)")
+    message: str = Field(..., min_length=1, max_length=2000, description="Natural language question or request from property developer")
