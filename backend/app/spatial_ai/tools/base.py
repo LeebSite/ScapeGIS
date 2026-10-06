@@ -1,4 +1,4 @@
-"""
+﻿"""
 Base Spatial Tool Contract
 
 Abstract base class for all AI-callable spatial tools.
@@ -106,17 +106,26 @@ class BaseSpatialTool(ABC):
         properties = json_schema.get("properties", {})
         required = json_schema.get("required", [])
 
+        type_mapping = {
+            "string": "STRING",
+            "number": "NUMBER",
+            "integer": "INTEGER",
+            "boolean": "BOOLEAN",
+            "object": "OBJECT",
+            "array": "ARRAY",
+        }
+
         # Gemini-friendly property definitions
         cleaned_properties = {}
         for prop_name, prop_def in properties.items():
+            raw_type = prop_def.get("type", "string").lower()
+            gemini_type = type_mapping.get(raw_type, "STRING")
             cleaned_prop = {
-                "type": prop_def.get("type", "string"),
+                "type": gemini_type,
                 "description": prop_def.get("description", ""),
             }
             if "enum" in prop_def:
                 cleaned_prop["enum"] = prop_def["enum"]
-            if "default" in prop_def:
-                cleaned_prop["default"] = prop_def["default"]
             cleaned_properties[prop_name] = cleaned_prop
 
         return {

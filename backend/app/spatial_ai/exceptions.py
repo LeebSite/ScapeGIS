@@ -28,3 +28,23 @@ class ToolExecutionError(SpatialAIError):
 class ToolNotFoundError(SpatialAIError):
     """Raised when an unrecognized tool name is requested."""
     pass
+
+
+class ProviderConfigurationError(SpatialAIError):
+    """Raised when an AI provider is missing required configuration (e.g. API key)."""
+    pass
+
+
+class ProviderExecutionError(SpatialAIError):
+    """Raised when an AI provider fails during network or generation calls."""
+    pass
+
+
+class ToolLoopExceededError(SpatialAIError):
+    """Raised when the tool calling orchestration loop exceeds the maximum permitted iterations."""
+    pass
+
+
+class MalformedModelResponseError(SpatialAIError):
+    """Raised when the AI provider returns an uninterpretable or malformed structure."""
+    pass
