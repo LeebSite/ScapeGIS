@@ -1,10 +1,11 @@
-﻿"""
+"""
 Spatial AI Analysis Endpoints
 
 Provides backend integration endpoint for Google Gemini spatial reasoning
 and multi-turn tool calling orchestration.
 Strictly enforces JWT authentication and tenant workspace authorization.
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,8 @@ from app.spatial_ai.exceptions import (
     ToolLoopExceededError,
     SpatialAIError,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/spatial-ai", tags=["Spatial AI"])
 
@@ -53,36 +56,41 @@ def analyze_spatial_query(
             request=request,
         )
     except SpatialAIAuthorizationError as e:
+        logger.warning("Spatial AI authorization failed: %s", e.message)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=e.message,
         )
     except ProviderConfigurationError as e:
+        logger.error("Spatial AI configuration error: %s", e.message, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Spatial AI configuration error: {e.message}",
+            detail="Spatial AI service configuration is invalid or missing required credentials.",
         )
     except ProviderExecutionError as e:
+        logger.error("Spatial AI provider execution error: %s", e.message, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Spatial AI provider error: {e.message}",
+            detail="Spatial AI provider service encountered an error while processing the request.",
         )
     except ToolLoopExceededError as e:
+        logger.warning("Spatial AI tool loop limit exceeded: %s", e.message)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=e.message,
+            detail="Spatial AI reasoning exceeded maximum allowed tool executions.",
         )
     except SpatialAIError as e:
+        logger.warning("Spatial AI processing error: %s", e.message)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=e.message,
+            detail="Invalid request or error encountered during spatial AI processing.",
         )
     except Exception as e:
+        logger.exception("Unexpected error during spatial AI processing: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected internal error occurred during spatial AI processing.",
         )
-
 
 
 @router.post(
@@ -116,31 +124,37 @@ def chat_spatial_query(
             request=request,
         )
     except SpatialAIAuthorizationError as e:
+        logger.warning("Spatial AI authorization failed: %s", e.message)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=e.message,
         )
     except ProviderConfigurationError as e:
+        logger.error("Spatial AI configuration error: %s", e.message, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Spatial AI configuration error: {e.message}",
+            detail="Spatial AI service configuration is invalid or missing required credentials.",
         )
     except ProviderExecutionError as e:
+        logger.error("Spatial AI provider execution error: %s", e.message, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Spatial AI provider error: {e.message}",
+            detail="Spatial AI provider service encountered an error while processing the request.",
         )
     except ToolLoopExceededError as e:
+        logger.warning("Spatial AI tool loop limit exceeded: %s", e.message)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=e.message,
+            detail="Spatial AI reasoning exceeded maximum allowed tool executions.",
         )
     except SpatialAIError as e:
+        logger.warning("Spatial AI processing error: %s", e.message)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=e.message,
+            detail="Invalid request or error encountered during spatial AI processing.",
         )
     except Exception as e:
+        logger.exception("Unexpected error during spatial AI chat processing: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected internal error occurred during spatial AI processing.",

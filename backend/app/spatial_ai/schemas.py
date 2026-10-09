@@ -10,6 +10,8 @@ from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
+from app.core.config import settings
+
 
 # â”€â”€ Coordinates â”€â”€
 
@@ -286,9 +288,18 @@ class SpatialAIChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000, description="Current user natural language message")
     history: List[ChatMessage] = Field(
         default_factory=list,
-        max_length=10,
-        description="Recent conversation turns (bounded to a maximum of 10 messages)",
+        description="Recent conversation turns (bounded by SPATIAL_AI_MAX_HISTORY_MESSAGES)",
     )
+
+    @field_validator("history")
+    @classmethod
+    def validate_history_length(cls, v: List[ChatMessage]) -> List[ChatMessage]:
+        max_messages = getattr(settings, "SPATIAL_AI_MAX_HISTORY_MESSAGES", 10)
+        if len(v) > max_messages:
+            raise ValueError(
+                f"Conversation history exceeds maximum allowed limit of {max_messages} messages."
+            )
+        return v
 
     @field_validator("message")
     @classmethod

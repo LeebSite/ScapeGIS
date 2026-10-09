@@ -51,6 +51,7 @@ from app.spatial_ai.agent import GeminiSpatialAgent
 from app.spatial_ai.tool_registry import SpatialAIToolRegistry
 from app.spatial_ai.context import SpatialAIContext
 from app.spatial_ai.exceptions import (
+    ProviderConfigurationError,
     SpatialAIAuthorizationError,
     ProviderExecutionError,
     MalformedModelResponseError,
@@ -181,8 +182,17 @@ class TestChatEndpointValidation:
             SpatialAIChatRequest(workspace_id=UUID(valid_ws), message="A" * 2001)
 
     def test_07_oversized_or_malformed_conversation_history(self):
-        """Requirement 7: History > 10 items or invalid role returns 422."""
+        """Requirement 7: History bounds consistent with config; empty & max valid, overflow returns 422."""
+        from app.core.config import settings
         valid_ws = UUID(str(uuid4()))
+
+        # Empty history is explicitly valid
+        req_empty = SpatialAIChatRequest(
+            workspace_id=valid_ws,
+            message="Valid message with empty history",
+            history=[],
+        )
+        assert req_empty.history == []
 
         # Invalid role (e.g. 'admin' or 'system')
         with pytest.raises(Exception):
@@ -195,10 +205,23 @@ class TestChatEndpointValidation:
         with pytest.raises(Exception):
             ChatMessage(role=ChatMessageRole.USER, content="   ")
 
-        # History with > 10 messages
+        # History with exact max allowed messages from settings is valid
+        max_history = getattr(settings, "SPATIAL_AI_MAX_HISTORY_MESSAGES", 10)
+        valid_max_history = [
+            ChatMessage(role=ChatMessageRole.USER, content=f"msg {i}")
+            for i in range(max_history)
+        ]
+        req_max = SpatialAIChatRequest(
+            workspace_id=valid_ws,
+            message="Valid message with max history",
+            history=valid_max_history,
+        )
+        assert len(req_max.history) == max_history
+
+        # History exceeding max limit raises validation error
         overflow_history = [
             ChatMessage(role=ChatMessageRole.USER, content=f"msg {i}")
-            for i in range(11)
+            for i in range(max_history + 1)
         ]
         with pytest.raises(Exception):
             SpatialAIChatRequest(
@@ -674,13 +697,13 @@ class TestChatErrorHandlingAndDataProtection:
     client = TestClient(app)
 
     def test_12_provider_timeout_or_rate_limit_error(self):
-        """Requirement 12: Provider timeout or rate limit mapped to HTTP 502."""
+        """Requirement 12: Provider timeout or rate limit mapped to HTTP 502 with sanitized message."""
         mock_user = MagicMock(spec=User)
         mock_user.id = uuid4()
         app.dependency_overrides[get_current_user] = lambda: mock_user
 
         try:
-            with patch.object(GeminiSpatialAgent, "chat", side_effect=ProviderExecutionError("Gemini request timed out after 30s.")):
+            with patch.object(GeminiSpatialAgent, "chat", side_effect=ProviderExecutionError("Internal Gemini timeout detail: 30s at grpc://internal.gemini")):
                 resp = self.client.post(
                     "/api/v1/spatial-ai/chat",
                     json={
@@ -689,18 +712,21 @@ class TestChatErrorHandlingAndDataProtection:
                     },
                 )
                 assert resp.status_code == 502
-                assert "timed out" in resp.json()["detail"].lower()
+                # Must NOT leak internal raw exception string or addresses
+                assert "grpc://internal.gemini" not in resp.text
+                assert "30s" not in resp.text
+                assert "Spatial AI provider service encountered an error" in resp.json()["detail"]
         finally:
             app.dependency_overrides.clear()
 
     def test_13_malformed_provider_response(self):
-        """Requirement 13: Malformed provider response handled safely without 500 crash."""
+        """Requirement 13: Malformed provider response handled safely without 500 crash or internal leakage."""
         mock_user = MagicMock(spec=User)
         mock_user.id = uuid4()
         app.dependency_overrides[get_current_user] = lambda: mock_user
 
         try:
-            with patch.object(GeminiSpatialAgent, "chat", side_effect=MalformedModelResponseError("Gemini returned empty candidate list.")):
+            with patch.object(GeminiSpatialAgent, "chat", side_effect=MalformedModelResponseError("Raw internal response: {'candidates': []}")):
                 resp = self.client.post(
                     "/api/v1/spatial-ai/chat",
                     json={
@@ -709,7 +735,30 @@ class TestChatErrorHandlingAndDataProtection:
                     },
                 )
                 assert resp.status_code == 400
-                assert "empty candidate list" in resp.json()["detail"]
+                assert "candidates" not in resp.text
+                assert "Raw internal response" not in resp.text
+                assert "Invalid request or error encountered" in resp.json()["detail"]
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_provider_configuration_error_sanitized(self):
+        """Requirement: Provider configuration errors do not leak internal credentials."""
+        mock_user = MagicMock(spec=User)
+        mock_user.id = uuid4()
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+
+        try:
+            with patch.object(GeminiSpatialAgent, "chat", side_effect=ProviderConfigurationError("GEMINI_API_KEY=AIzaSySecretKey123 is invalid")):
+                resp = self.client.post(
+                    "/api/v1/spatial-ai/chat",
+                    json={
+                        "workspace_id": str(uuid4()),
+                        "message": "Config error test",
+                    },
+                )
+                assert resp.status_code == 503
+                assert "AIzaSySecretKey123" not in resp.text
+                assert "Spatial AI service configuration is invalid" in resp.json()["detail"]
         finally:
             app.dependency_overrides.clear()
 
