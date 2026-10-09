@@ -91,8 +91,9 @@ class GeminiProvider(BaseSpatialAIProvider):
         self,
         system_instruction: str,
         tool_declarations: List[Dict[str, Any]],
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> GeminiSession:
-        """Configures Gemini model with tool declarations and primes system instruction."""
+        """Configures Gemini model with tool declarations, primes system instruction, and appends prior history."""
         if not self.api_key:
             raise ProviderConfigurationError(
                 "Gemini API key is not configured. Please set GEMINI_API_KEY in backend configuration or .env."
@@ -108,7 +109,7 @@ class GeminiProvider(BaseSpatialAIProvider):
             )
 
             # Prime conversation with system instruction in initial history
-            history = [
+            init_history = [
                 {
                     "role": "user",
                     "parts": [f"[SYSTEM INSTRUCTION]\n{system_instruction}"],
@@ -120,9 +121,11 @@ class GeminiProvider(BaseSpatialAIProvider):
                     ],
                 },
             ]
+            if history:
+                init_history.extend(history)
 
             chat = model.start_chat(
-                history=history,
+                history=init_history,
                 enable_automatic_function_calling=False,
             )
             return GeminiSession(chat=chat, model=model)

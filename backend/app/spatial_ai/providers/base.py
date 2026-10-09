@@ -51,6 +51,7 @@ class BaseSpatialAIProvider(ABC):
         self,
         system_instruction: str,
         tool_declarations: List[Dict[str, Any]],
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> Any:
         """
         Initializes a stateful conversation session configured with
