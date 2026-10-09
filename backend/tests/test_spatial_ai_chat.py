@@ -315,6 +315,62 @@ class TestChatAgentAuthorizationAndSecurity:
         assert sanitized[0]["role"] == "user"
         assert sanitized[1]["role"] == "model"
 
+    @patch("app.spatial_ai.agent.build_spatial_ai_context")
+    def test_project_id_model_override_is_prevented(self, mock_build_context):
+        """Verify model cannot override request project_id, and cannot inject unrequested project_id."""
+        ws_id = uuid4()
+        req_project_id = uuid4()
+        attacker_project_id = str(uuid4())
+
+        mock_build_context.return_value = SpatialAIContext(
+            user_id=str(uuid4()),
+            user_email="dev@scapegis.com",
+            workspace_id=str(ws_id),
+            workspace_name="Test Workspace",
+            available_tools=["find_nearest"],
+        )
+
+        mock_registry = MagicMock(spec=SpatialAIToolRegistry)
+        mock_registry.to_gemini_declarations.return_value = []
+        mock_registry.execute_tool.return_value = FindNearestOutput(
+            success=True, category="test", subcategory="test", target={},
+        )
+
+        # Case A: Request has project_id, model attempts to supply a different project_id
+        step = ProviderStepResult(
+            is_tool_call=True,
+            tool_calls=[ToolCallRequest(
+                tool_name="find_nearest",
+                arguments={"subcategory": "hospital", "project_id": attacker_project_id}
+            )],
+        )
+        provider = MockChatAIProvider(step_sequence=[step])
+        agent = GeminiSpatialAgent(provider=provider, registry=mock_registry)
+        req_with_project = SpatialAIChatRequest(
+            workspace_id=ws_id,
+            project_id=req_project_id,
+            message="Check with project",
+        )
+        agent.chat(db=MagicMock(), user=MagicMock(), request=req_with_project)
+
+        called_params = mock_registry.execute_tool.call_args[1]["params"]
+        assert called_params["project_id"] == str(req_project_id)
+        assert called_params["project_id"] != attacker_project_id
+
+        # Case B: Request has NO project_id, model attempts to inject one
+        mock_registry.execute_tool.reset_mock()
+        provider_b = MockChatAIProvider(step_sequence=[step])
+        agent_b = GeminiSpatialAgent(provider=provider_b, registry=mock_registry)
+        req_without_project = SpatialAIChatRequest(
+            workspace_id=ws_id,
+            project_id=None,
+            message="Check without project",
+        )
+        agent_b.chat(db=MagicMock(), user=MagicMock(), request=req_without_project)
+
+        called_params_b = mock_registry.execute_tool.call_args[1]["params"]
+        assert "project_id" not in called_params_b
+
 
 # ========================================================
 # 3. Spatial Tool Execution & Ground Truth (Requirements 9, 10, 11, 14, 15)

@@ -238,8 +238,10 @@ class GeminiSpatialAgent:
 
                 # Security: ALWAYS enforce backend-provided tenant scope and coordinates
                 raw_args["workspace_id"] = str(workspace_id)
-                if project_id and "project_id" not in raw_args:
+                if project_id:
                     raw_args["project_id"] = str(project_id)
+                elif "project_id" in raw_args:
+                    del raw_args["project_id"]
                 if coords:
                     if "latitude" not in raw_args:
                         raw_args["latitude"] = coords[0]
