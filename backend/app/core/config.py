@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-3.8-flash"
     GEMINI_TIMEOUT_SECONDS: int = 30
     SPATIAL_AI_MAX_TOOL_CALLS: int = 8
+    SPATIAL_AI_MAX_HISTORY_MESSAGES: int = 10
 
 
 settings = Settings()

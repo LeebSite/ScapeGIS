@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Optional, List, Dict, Any, Union
 from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 
 # â”€â”€ Coordinates â”€â”€
@@ -252,3 +252,56 @@ class SpatialAIAnalysisRequest(BaseModel):
     latitude: float = Field(..., ge=-90.0, le=90.0, description="Target location latitude (-90 to 90)")
     longitude: float = Field(..., ge=-180.0, le=180.0, description="Target location longitude (-180 to 180)")
     message: str = Field(..., min_length=1, max_length=2000, description="Natural language question or request from property developer")
+
+# ── Chat Request & History Contracts ──
+
+class ChatMessageRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class ChatMessage(BaseModel):
+    role: ChatMessageRole = Field(..., description="Role of message author ('user' or 'assistant')")
+    content: str = Field(..., min_length=1, max_length=2000, description="Text content of the message")
+
+    @field_validator("content")
+    @classmethod
+    def validate_content_not_empty(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("Message content cannot be empty or only whitespace.")
+        return s
+
+
+class SpatialAIChatRequest(BaseModel):
+    """
+    Request payload for the multi-turn Spatial AI chat endpoint.
+    Includes current user message, optional coordinate anchor,
+    and bounded conversation history.
+    """
+    workspace_id: UUID = Field(..., description="Workspace ID for scoping multi-tenant access")
+    project_id: Optional[UUID] = Field(None, description="Optional project context ID")
+    latitude: Optional[float] = Field(None, ge=-90.0, le=90.0, description="Optional target location latitude (-90 to 90)")
+    longitude: Optional[float] = Field(None, ge=-180.0, le=180.0, description="Optional target location longitude (-180 to 180)")
+    message: str = Field(..., min_length=1, max_length=2000, description="Current user natural language message")
+    history: List[ChatMessage] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Recent conversation turns (bounded to a maximum of 10 messages)",
+    )
+
+    @field_validator("message")
+    @classmethod
+    def validate_message_not_empty(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("User message cannot be empty or only whitespace.")
+        return s
+
+    @model_validator(mode="after")
+    def validate_coordinates(self) -> "SpatialAIChatRequest":
+        if (self.latitude is not None and self.longitude is None) or (
+            self.latitude is None and self.longitude is not None
+        ):
+            raise ValueError("Both latitude and longitude must be provided together.")
+        return self
