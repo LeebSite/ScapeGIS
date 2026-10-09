@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_current_user
 from app.db.models.user import User
 from app.spatial_ai.agent import GeminiSpatialAgent
-from app.spatial_ai.schemas import SpatialAIAnalysisRequest, SpatialAIResponse
+from app.spatial_ai.schemas import SpatialAIAnalysisRequest, SpatialAIChatRequest, SpatialAIResponse
 from app.spatial_ai.exceptions import (
     SpatialAIAuthorizationError,
     ProviderConfigurationError,
@@ -48,6 +48,69 @@ def analyze_spatial_query(
     try:
         agent = GeminiSpatialAgent()
         return agent.analyze(
+            db=db,
+            user=current_user,
+            request=request,
+        )
+    except SpatialAIAuthorizationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=e.message,
+        )
+    except ProviderConfigurationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Spatial AI configuration error: {e.message}",
+        )
+    except ProviderExecutionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Spatial AI provider error: {e.message}",
+        )
+    except ToolLoopExceededError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=e.message,
+        )
+    except SpatialAIError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected internal error occurred during spatial AI processing.",
+        )
+
+
+
+@router.post(
+    "/chat",
+    response_model=SpatialAIResponse,
+    summary="Execute multi-turn Spatial AI chat with controlled tool contract",
+    description=(
+        "Processes a natural language chat message with bounded conversation history. "
+        "Orchestrates spatial reasoning through verified PostGIS tools, strictly scoped "
+        "to the authorized workspace and active GIS datasets."
+    ),
+)
+def chat_spatial_query(
+    request: SpatialAIChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SpatialAIResponse:
+    """
+    Executes the multi-turn Spatial AI chat reasoning pipeline:
+    1. Authenticated User & Workspace Authorization Check
+    2. Bounded and Sanitized History Injection
+    3. PostGIS Ground-Truth Tool Dispatch
+    4. Provider Analytical Synthesis
+    5. Provenance & MapAction derivation
+    """
+    try:
+        agent = GeminiSpatialAgent()
+        return agent.chat(
             db=db,
             user=current_user,
             request=request,
