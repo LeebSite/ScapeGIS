@@ -64,10 +64,11 @@ class MockAIProvider(BaseSpatialAIProvider):
         self.received_tool_results = []
         self.started_conversations = []
 
-    def start_conversation(self, system_instruction, tool_declarations):
+    def start_conversation(self, system_instruction, tool_declarations, history=None):
         self.started_conversations.append({
             "system_instruction": system_instruction,
             "tool_declarations": tool_declarations,
+            "history": history,
         })
         return "mock_session"
 
