@@ -99,7 +99,7 @@ class GeminiProvider(BaseSpatialAIProvider):
             )
 
         try:
-            genai.configure(api_key=self.api_key)
+            genai.configure(api_key=self.api_key, transport="rest")
             cleaned_tools = self._prepare_tool_declarations(tool_declarations)
 
             model = genai.GenerativeModel(
