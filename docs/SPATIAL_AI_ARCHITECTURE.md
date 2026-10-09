@@ -182,6 +182,7 @@ The LLM has zero authority over tenant boundary or authorization decisions.
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Target Gemini model name confirmed by the current Google API. |
 | `GEMINI_TIMEOUT_SECONDS` | `30` | Request timeout in seconds for LLM communication. |
 | `SPATIAL_AI_MAX_TOOL_CALLS` | `8` | Maximum tool-call iterations per query to prevent runaway loops. |
+| `SPATIAL_AI_MAX_HISTORY_MESSAGES` | `10` | Bounded sliding window for prior chat conversation history. |
 
 ---
 
@@ -195,3 +196,137 @@ The LLM has zero authority over tenant boundary or authorization decisions.
   - Module 2A (Tool Contracts): 48/48 passed
   - Module 2B (Gemini Reasoning Agent): 11/11 passed (1 live smoke test skipped on quota)
   - **Total Suite**: 92 passed, 1 skipped (100% green).
+
+
+---
+
+## 9. Module 2C — Spatial AI Chat API Specification
+
+Module 2C establishes a secure, provider-agnostic conversational endpoint (`POST /api/v1/spatial-ai/chat`) extending the spatial reasoning engine for multi-turn conversational interaction.
+
+### 9.1 Endpoint Definition
+
+* **Path:** `POST /api/v1/spatial-ai/chat`
+* **Authentication:** Mandatory Bearer JWT token (`Depends(get_current_user)`).
+* **Tag:** `Spatial AI`
+
+### 9.2 Request & Response Contracts
+
+#### Request (`SpatialAIChatRequest`)
+```json
+{
+  "workspace_id": "2a12cd6e-3644-4f72-989b-ac7737d06e3a",
+  "project_id": null,
+  "latitude": 0.507068,
+  "longitude": 101.447779,
+  "message": "Berapa jarak ke rumah sakit terdekat dari lokasi ini?",
+  "history": [
+    {
+      "role": "user",
+      "content": "Halo, saya sedang mengevaluasi lahan di Pekanbaru."
+    },
+    {
+      "role": "assistant",
+      "content": "Halo! Saya siap membantu analisis spasial berbasis PostGIS."
+    }
+  ]
+}
+```
+
+* **Constraints:**
+  * `workspace_id`: Required UUID, validated against user membership.
+  * `project_id`: Optional UUID, verified to belong to the authorized workspace.
+  * `latitude` & `longitude`: Optional coordinate anchor pair. If one is supplied, both must be supplied (`ge=-90, le=90` / `ge=-180, le=180`).
+  * `message`: Required string, `min_length=1`, `max_length=2000`, non-whitespace.
+  * `history`: List of `ChatMessage` objects, bounded to a maximum of 10 items.
+  * `ChatMessage.role`: Strictly limited to `"user"` or `"assistant"`.
+  * `ChatMessage.content`: String `min_length=1`, `max_length=2000`.
+
+#### Response (`SpatialAIResponse`)
+```json
+{
+  "answer": "Berdasarkan data GIS Kota Pekanbaru, fasilitas rumah sakit terdekat adalah Rumah Sakit Khusus dengan jarak 1.082 km.",
+  "facts": [
+    {
+      "type": "distance",
+      "category": "public_facility",
+      "subcategory": "hospital",
+      "statement": "Fasilitas hospital terdekat (Rumah Sakit Khusus) berjarak 1.082 km (1081.97 meter).",
+      "value": 1081.97,
+      "unit": "meter",
+      "source_layer": "Dot_LOKASI_RumahSakit",
+      "dataset_id": "adb542a8-4c47-413f-a98b-3592b7f7ef00"
+    }
+  ],
+  "sources": [
+    {
+      "dataset_id": "adb542a8-4c47-413f-a98b-3592b7f7ef00",
+      "dataset_name": "Kota Pekanbaru",
+      "layer_id": "38d437b1-6134-4b00-a9c2-4fc9996d45e4",
+      "layer_name": "Dot_LOKASI_RumahSakit",
+      "semantic_category": "public_facility",
+      "semantic_subcategory": "hospital",
+      "operation": "ST_DistanceSphere",
+      "feature_count_queried": 1
+    }
+  ],
+  "map_actions": [
+    {
+      "type": "show_marker",
+      "coordinates": { "latitude": 0.507068, "longitude": 101.447779 },
+      "properties": { "title": "Lokasi Target Analisis" }
+    },
+    {
+      "type": "highlight_feature",
+      "layer_id": "38d437b1-6134-4b00-a9c2-4fc9996d45e4",
+      "feature_ids": ["d65fdb66-85ee-4824-b56d-7bc2ca3a5e0c"],
+      "properties": { "name": "Rumah Sakit Khusus", "distance_m": 1081.97 }
+    }
+  ],
+  "tool_calls": [
+    {
+      "iteration": 1,
+      "tool": "find_nearest",
+      "arguments": { "subcategory": "hospital", "workspace_id": "..." },
+      "success": true
+    }
+  ],
+  "timestamp": "2026-10-10T02:50:00Z",
+  "model": "gemini-3.8-flash"
+}
+```
+
+### 9.3 Security & Boundary Enforcements
+
+1. **Authentication Enforcement:** Unauthenticated requests return `401 Unauthorized`.
+2. **Deterministic Workspace Boundary:** Workspace membership is verified in PostgreSQL against the authenticated `current_user.id`. The LLM cannot access cross-tenant data.
+3. **GIS Entitlement Check:** Active dataset grants (`WorkspaceGISAccess.is_active == True`) are required before tools can execute. Empty grants return `403 Forbidden`.
+4. **Prompt Injection Protection:** History turns mimicking system prompt headers (e.g. `[SYSTEM INSTRUCTION]`) are neutralized to `[PREVIOUS_CONTEXT]`.
+5. **No SQL Execution:** The AI model cannot generate or execute raw SQL. All geometric queries route exclusively through `SpatialAIToolRegistry`.
+6. **No Secret Leaks:** Provider credentials, database connection strings, and internal stack traces are suppressed from API responses (500 errors return sanitized message).
+
+### 9.4 Error Semantics
+
+| Status Code | Reason | Cause |
+| :--- | :--- | :--- |
+| `401 Unauthorized` | Not Authenticated | Missing, expired, or invalid JWT token. |
+| `403 Forbidden` | Authorization Failure | User not in workspace, project not in workspace, or no active GIS entitlement. |
+| `422 Unprocessable Entity` | Validation Error | Oversized message, >10 history items, invalid role, or unbalanced coordinate pair. |
+| `400 Bad Request` | Spatial AI Error | Malformed provider candidates or semantic resolution errors. |
+| `502 Bad Gateway` | Provider Execution Error | Gemini API timeout, quota exhaustion (429), or network error. |
+| `503 Service Unavailable` | Configuration Error | `GEMINI_API_KEY` missing from backend configuration. |
+| `500 Internal Server Error` | Unexpected Server Error | Uncaught internal exception; sanitized message returned without stack trace. |
+
+### 9.5 Test Verification
+
+Automated regression command:
+```powershell
+& "D:\ScapeGIS\backend\venv\Scripts\python.exe" -m pytest tests/test_spatial_ai_chat.py -v
+```
+
+Total regression suite: **109 passed, 1 skipped (0 failures)** across:
+- `tests/test_spatial_ai_chat.py`: 17 passed
+- `tests/test_gemini_spatial_agent.py`: 11 passed, 1 skipped
+- `tests/test_spatial_ai_tools.py`: 48 passed
+- `tests/test_spatial_knowledge.py`: 25 passed
+- `tests/test_gis_access.py`: 8 passed
