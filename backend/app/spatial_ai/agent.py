@@ -17,8 +17,12 @@ from app.spatial_ai.prompts.system_prompt import build_spatial_ai_system_instruc
 from app.spatial_ai.providers.base import BaseSpatialAIProvider
 from app.spatial_ai.providers.gemini_provider import GeminiProvider
 from app.spatial_ai.tool_registry import SpatialAIToolRegistry, default_registry
+import re
 from app.spatial_ai.schemas import (
     SpatialAIAnalysisRequest,
+    SpatialAIChatRequest,
+    ChatMessage,
+    ChatMessageRole,
     SpatialAIResponse,
     SpatialFact,
     SpatialProvenance,
@@ -72,7 +76,6 @@ class GeminiSpatialAgent:
         3. Executes tool calling orchestration loop.
         4. Synthesizes facts, provenance, and map actions into SpatialAIResponse.
         """
-        # Step 1: Deterministic tenant authorization and context building
         context = build_spatial_ai_context(
             db=db,
             user=user,
@@ -80,17 +83,6 @@ class GeminiSpatialAgent:
             project_id=request.project_id,
         )
 
-        # Step 2: System prompt & tool declarations
-        system_instruction = build_spatial_ai_system_instruction(context)
-        tool_declarations = self.registry.to_gemini_declarations()
-
-        # Step 3: Initialize provider session
-        session = self.provider.start_conversation(
-            system_instruction=system_instruction,
-            tool_declarations=tool_declarations,
-        )
-
-        # Step 4: Construct user prompt with verified location anchor
         user_prompt = (
             f"Target Location: Latitude {request.latitude}, Longitude {request.longitude}.\n"
             f"Workspace ID: {request.workspace_id}\n"
@@ -99,23 +91,137 @@ class GeminiSpatialAgent:
             user_prompt += f"Project ID: {request.project_id}\n"
         user_prompt += f"\nUser Question:\n{request.message}"
 
-        # Step 5: First provider turn
+        coords = (request.latitude, request.longitude)
+
+        return self._run_orchestration_loop(
+            db=db,
+            user=user,
+            context=context,
+            user_prompt=user_prompt,
+            workspace_id=request.workspace_id,
+            project_id=request.project_id,
+            coords=coords,
+            history=None,
+        )
+
+    def chat(
+        self,
+        db: Session,
+        user: User,
+        request: SpatialAIChatRequest,
+    ) -> SpatialAIResponse:
+        """
+        Executes the multi-turn spatial AI chat pipeline (Module 2C):
+        1. Builds & validates SpatialAIContext (tenant authorization).
+        2. Sanitizes and bounds conversation history.
+        3. Reuses controlled PostGIS tool contracts and loop limits.
+        4. Synthesizes structured response with facts, provenance, and map actions.
+        """
+        context = build_spatial_ai_context(
+            db=db,
+            user=user,
+            workspace_id=request.workspace_id,
+            project_id=request.project_id,
+        )
+
+        user_prompt = f"Workspace ID: {request.workspace_id}\n"
+        if request.project_id:
+            user_prompt += f"Project ID: {request.project_id}\n"
+        if request.latitude is not None and request.longitude is not None:
+            user_prompt += f"Target Location: Latitude {request.latitude}, Longitude {request.longitude}.\n"
+        user_prompt += f"\nUser Question:\n{request.message}"
+
+        coords = (
+            (request.latitude, request.longitude)
+            if request.latitude is not None and request.longitude is not None
+            else None
+        )
+        sanitized_history = self._prepare_and_sanitize_history(request.history)
+
+        return self._run_orchestration_loop(
+            db=db,
+            user=user,
+            context=context,
+            user_prompt=user_prompt,
+            workspace_id=request.workspace_id,
+            project_id=request.project_id,
+            coords=coords,
+            history=sanitized_history,
+        )
+
+    def _prepare_and_sanitize_history(
+        self,
+        history: List[ChatMessage],
+    ) -> List[Dict[str, Any]]:
+        """
+        Validates, bounds, and sanitizes user-supplied conversation history:
+        - Bounded to settings.SPATIAL_AI_MAX_HISTORY_MESSAGES.
+        - Maps ChatMessageRole to provider roles ('user' -> 'user', 'assistant' -> 'model').
+        - Neutralizes deceptive system instruction headers.
+        """
+        if not history:
+            return []
+
+        max_messages = getattr(settings, "SPATIAL_AI_MAX_HISTORY_MESSAGES", 10)
+        bounded = history[-max_messages:]
+
+        sanitized_turns: List[Dict[str, Any]] = []
+        for msg in bounded:
+            role = "user" if msg.role == ChatMessageRole.USER else "model"
+            content = msg.content or ""
+            # Neutralize potential prompt injection mimicking system prompt headers
+            neutralized_content = re.sub(
+                r"\[\s*SYSTEM(?:\s+INSTRUCTION)?\s*\]",
+                "[PREVIOUS_CONTEXT]",
+                content,
+                flags=re.IGNORECASE,
+            )
+            sanitized_turns.append({
+                "role": role,
+                "parts": [neutralized_content],
+            })
+
+        return sanitized_turns
+
+    def _run_orchestration_loop(
+        self,
+        db: Session,
+        user: User,
+        context: SpatialAIContext,
+        user_prompt: str,
+        workspace_id: UUID,
+        project_id: Optional[UUID],
+        coords: Optional[Tuple[float, float]],
+        history: Optional[List[Dict[str, Any]]] = None,
+    ) -> SpatialAIResponse:
+        """
+        Shared reasoning and tool execution loop between single-turn analysis
+        and multi-turn chat sessions.
+        """
+        system_instruction = build_spatial_ai_system_instruction(context)
+        tool_declarations = self.registry.to_gemini_declarations()
+
+        session = self.provider.start_conversation(
+            system_instruction=system_instruction,
+            tool_declarations=tool_declarations,
+            history=history,
+        )
+
         step = self.provider.send_user_message(session, user_prompt)
 
-        # Step 6: Tool Calling Orchestration Loop
         accumulated_facts: List[SpatialFact] = []
         accumulated_sources: List[SpatialProvenance] = []
         accumulated_map_actions: List[MapAction] = []
         tool_calls_trace: List[Dict[str, Any]] = []
 
-        # Always add a map marker for the user's analyzed target location
-        accumulated_map_actions.append(
-            MapAction(
-                type=MapActionType.SHOW_MARKER,
-                coordinates={"latitude": request.latitude, "longitude": request.longitude},
-                properties={"title": "Lokasi Target Analisis"},
+        if coords:
+            accumulated_map_actions.append(
+                MapAction(
+                    type=MapActionType.SHOW_MARKER,
+                    coordinates={"latitude": coords[0], "longitude": coords[1]},
+                    properties={"title": "Lokasi Target Analisis"},
+                )
             )
-        )
 
         iteration = 0
         while step.is_tool_call and step.tool_calls:
@@ -130,14 +236,15 @@ class GeminiSpatialAgent:
                 tool_name = call.tool_name
                 raw_args = dict(call.arguments)
 
-                # Security / Isolation: ALWAYS enforce backend-provided tenant scope and coordinates
-                raw_args["workspace_id"] = str(request.workspace_id)
-                if request.project_id and "project_id" not in raw_args:
-                    raw_args["project_id"] = str(request.project_id)
-                if "latitude" not in raw_args:
-                    raw_args["latitude"] = request.latitude
-                if "longitude" not in raw_args:
-                    raw_args["longitude"] = request.longitude
+                # Security: ALWAYS enforce backend-provided tenant scope and coordinates
+                raw_args["workspace_id"] = str(workspace_id)
+                if project_id and "project_id" not in raw_args:
+                    raw_args["project_id"] = str(project_id)
+                if coords:
+                    if "latitude" not in raw_args:
+                        raw_args["latitude"] = coords[0]
+                    if "longitude" not in raw_args:
+                        raw_args["longitude"] = coords[1]
 
                 # Execute controlled tool via registry
                 try:
@@ -163,7 +270,6 @@ class GeminiSpatialAgent:
                         "success": True,
                     })
 
-                    # Sanitize output before returning to LLM (no massive raw geometries)
                     safe_result = self._sanitize_result_for_llm(tool_output)
 
                 except Exception as e:
@@ -180,7 +286,6 @@ class GeminiSpatialAgent:
                         "error": str(e),
                     }
 
-                # Feed result back to provider
                 step = self.provider.send_tool_result(
                     session=session,
                     tool_name=tool_name,
