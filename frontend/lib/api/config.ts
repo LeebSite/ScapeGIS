@@ -19,8 +19,8 @@ export const API_CONFIG = {
     USE_MOCK_LAYER: USE_MOCK_DATA,
     USE_MOCK_SUBSCRIPTION: USE_MOCK_DATA,
 
-    // Removed features (no backend endpoints)
-    USE_MOCK_AI: true, // Always mock since removed from backend
+    // Spatial AI - Connected to backend (/api/v1/spatial-ai/chat, /analyze)
+    USE_MOCK_AI: false, // Real backend endpoints active
     USE_MOCK_INVITATION: true, // Always mock since removed from backend
 
     // Mock behavior settings

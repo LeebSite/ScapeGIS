@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Bot, User, Loader2, RotateCcw, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { aiAPI, ChatMessage } from "@/lib/api/AIService";
+import { aiAPI, ChatMessage, SPATIAL_AI_MAX_HISTORY_MESSAGES } from "@/lib/api/AIService";
 import { useWorkspaceStore } from "@/lib/store";
 
 interface Message {
@@ -61,7 +61,7 @@ export function ChatbotPanel({
     scrollToBottom();
   }, [messages, isLoading]);
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string, isRetry = false) => {
     const trimmed = text.trim();
     if (!trimmed || isLoading) return;
 
@@ -78,26 +78,51 @@ export function ChatbotPanel({
       return;
     }
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: trimmed,
-      timestamp: new Date(),
-    };
+    let historyPayload: ChatMessage[] = [];
 
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
+    if (isRetry) {
+      // Retry flow: do not duplicate user message bubble.
+      // Remove any prior error bubble from the conversation
+      setMessages((prev) => prev.filter((m) => !m.isError));
+
+      // Build bounded history from successful prior turns preceding this user message
+      const validPreceding = messages.filter(
+        (m) => m.id !== "welcome-msg" && !m.isError
+      );
+      // The last element is the user turn being retried; history consists of turns before it
+      const priorTurns = validPreceding.slice(0, -1);
+      historyPayload = priorTurns
+        .slice(-SPATIAL_AI_MAX_HISTORY_MESSAGES)
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+    } else {
+      // Normal flow: create and append new user message bubble
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content: trimmed,
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev.filter((m) => !m.isError), userMessage]);
+      setInput("");
+
+      // Build bounded history from all existing valid turns
+      const validTurns = messages.filter(
+        (m) => m.id !== "welcome-msg" && !m.isError
+      );
+      historyPayload = validTurns
+        .slice(-SPATIAL_AI_MAX_HISTORY_MESSAGES)
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+    }
+
     setIsLoading(true);
     setLastFailedText(null);
-
-    // Prepare bounded conversation history (bounded to last 10 turns, excluding initial greeting)
-    const historyPayload: ChatMessage[] = messages
-      .filter((m) => m.id !== "welcome-msg" && !m.isError)
-      .slice(-10)
-      .map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
 
     try {
       const response = await aiAPI.chat({
@@ -144,7 +169,7 @@ export function ChatbotPanel({
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    await sendMessage(input);
+    await sendMessage(input, false);
   };
 
   return (
@@ -240,7 +265,7 @@ export function ChatbotPanel({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => sendMessage(lastFailedText)}
+              onClick={() => sendMessage(lastFailedText, true)}
               className="h-7 text-xs flex items-center space-x-1"
             >
               <RotateCcw className="h-3 w-3 mr-1" />

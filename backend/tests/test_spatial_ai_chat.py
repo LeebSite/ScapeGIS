@@ -762,6 +762,29 @@ class TestChatErrorHandlingAndDataProtection:
         finally:
             app.dependency_overrides.clear()
 
+    def test_authorization_error_sanitized(self):
+        """Requirement: 403 Forbidden errors must not leak internal user UUIDs, workspace IDs, or dataset details."""
+        mock_user = MagicMock(spec=User)
+        mock_user.id = uuid4()
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+
+        internal_msg = "User secret-user-id is not an active member of workspace secret-ws-id (schema postgis_dev_123)"
+        try:
+            with patch.object(GeminiSpatialAgent, "chat", side_effect=SpatialAIAuthorizationError(internal_msg)):
+                resp = self.client.post(
+                    "/api/v1/spatial-ai/chat",
+                    json={
+                        "workspace_id": str(uuid4()),
+                        "message": "Auth test",
+                    },
+                )
+                assert resp.status_code == 403
+                assert "secret-user-id" not in resp.text
+                assert "postgis_dev_123" not in resp.text
+                assert resp.json()["detail"] == "Access forbidden: you do not have permission to access the requested workspace, project, or GIS resources."
+        finally:
+            app.dependency_overrides.clear()
+
     def test_16_no_leakage_of_secrets_or_stack_traces(self):
         """Requirement 16: No secret keys or python tracebacks exposed to client."""
         mock_user = MagicMock(spec=User)

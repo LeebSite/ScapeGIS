@@ -56,10 +56,15 @@ def analyze_spatial_query(
             request=request,
         )
     except SpatialAIAuthorizationError as e:
-        logger.warning("Spatial AI authorization failed: %s", e.message)
+        logger.warning(
+            "Spatial AI authorization rejected for user %s, workspace %s: %s",
+            getattr(current_user, "id", None),
+            request.workspace_id,
+            e.message,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=e.message,
+            detail="Access forbidden: you do not have permission to access the requested workspace, project, or GIS resources.",
         )
     except ProviderConfigurationError as e:
         logger.error("Spatial AI configuration error: %s", e.message, exc_info=True)
@@ -124,10 +129,15 @@ def chat_spatial_query(
             request=request,
         )
     except SpatialAIAuthorizationError as e:
-        logger.warning("Spatial AI authorization failed: %s", e.message)
+        logger.warning(
+            "Spatial AI authorization rejected for user %s, workspace %s: %s",
+            getattr(current_user, "id", None),
+            request.workspace_id,
+            e.message,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=e.message,
+            detail="Access forbidden: you do not have permission to access the requested workspace, project, or GIS resources.",
         )
     except ProviderConfigurationError as e:
         logger.error("Spatial AI configuration error: %s", e.message, exc_info=True)
