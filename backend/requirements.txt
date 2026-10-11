@@ -49,7 +49,7 @@ requests==2.31.0
 # =========================
 # AI / LLM (Gemini)
 # =========================
-google-generativeai==0.4.1
+google-generativeai==0.8.5
 
 # =========================
 # File Upload & Parsing

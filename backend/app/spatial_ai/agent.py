@@ -288,11 +288,20 @@ class GeminiSpatialAgent:
                         "error": str(e),
                     }
 
-                step = self.provider.send_tool_result(
-                    session=session,
-                    tool_name=tool_name,
-                    result=safe_result,
-                )
+                send_kwargs = {
+                    "session": session,
+                    "tool_name": tool_name,
+                    "result": safe_result,
+                }
+                sig = getattr(call, "thought_signature", None)
+                if sig is not None:
+                    send_kwargs["thought_signature"] = sig
+
+                try:
+                    step = self.provider.send_tool_result(**send_kwargs)
+                except TypeError:
+                    send_kwargs.pop("thought_signature", None)
+                    step = self.provider.send_tool_result(**send_kwargs)
 
         final_answer = step.text or (
             "Analisis spasial berhasil dieksekusi berdasarkan layer GIS yang tersedia di workspace Anda."

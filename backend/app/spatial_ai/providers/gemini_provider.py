@@ -153,10 +153,16 @@ class GeminiProvider(BaseSpatialAIProvider):
                 args = {}
                 if hasattr(fn, "args") and fn.args:
                     args = dict(fn.args)
+                thought_sig = getattr(fn, "thought_signature", None)
+                if (thought_sig is None or not isinstance(thought_sig, (bytes, bytearray))) and hasattr(part, "thought_signature"):
+                    thought_sig = getattr(part, "thought_signature", None)
+                if thought_sig is not None and not isinstance(thought_sig, (bytes, bytearray)):
+                    thought_sig = None
                 tool_calls.append(
                     ToolCallRequest(
                         tool_name=fn.name,
                         arguments=args,
+                        thought_signature=thought_sig,
                     )
                 )
             elif hasattr(part, "text") and part.text:
@@ -212,9 +218,29 @@ class GeminiProvider(BaseSpatialAIProvider):
         session: GeminiSession,
         tool_name: str,
         result: Dict[str, Any],
+        thought_signature: Optional[bytes] = None,
     ) -> ProviderStepResult:
         """Feeds tool execution output back to Gemini model as a FunctionResponse."""
         try:
+            # Before sending, ensure preceding model function_call in history carries signature if supported
+            if thought_signature and hasattr(session, "chat") and hasattr(session.chat, "history"):
+                for content in reversed(session.chat.history):
+                    if getattr(content, "role", None) == "model" and hasattr(content, "parts"):
+                        for p in content.parts:
+                            if hasattr(p, "function_call") and p.function_call:
+                                if hasattr(p, "thought_signature") and not getattr(p, "thought_signature", None):
+                                    try:
+                                        p.thought_signature = thought_signature
+                                    except Exception:
+                                        pass
+                                if hasattr(p.function_call, "thought_signature") and not getattr(p.function_call, "thought_signature", None):
+                                    try:
+                                        p.function_call.thought_signature = thought_signature
+                                    except Exception:
+                                        pass
+                                break
+                        break
+
             # Construct protobuf FunctionResponse Part
             part = glm.Part(
                 function_response=glm.FunctionResponse(

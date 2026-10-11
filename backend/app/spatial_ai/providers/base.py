@@ -15,6 +15,7 @@ class ToolCallRequest(BaseModel):
     tool_name: str
     arguments: Dict[str, Any] = Field(default_factory=dict)
     call_id: Optional[str] = None
+    thought_signature: Optional[bytes] = None
 
 
 class ProviderStepResult(BaseModel):
@@ -77,6 +78,7 @@ class BaseSpatialAIProvider(ABC):
         session: Any,
         tool_name: str,
         result: Dict[str, Any],
+        thought_signature: Optional[bytes] = None,
     ) -> ProviderStepResult:
         """
         Feeds back the execution result of a tool to the model,
