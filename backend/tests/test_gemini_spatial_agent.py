@@ -109,6 +109,7 @@ class TestGeminiProvider:
         assert provider.timeout_seconds == settings.GEMINI_TIMEOUT_SECONDS
 
     def test_prepare_tool_declarations_formats_types_and_removes_default(self):
+        from google.genai import types
         provider = GeminiProvider(api_key="test_key")
         raw_tools = [
             {
@@ -125,10 +126,12 @@ class TestGeminiProvider:
             }
         ]
         cleaned = provider._prepare_tool_declarations(raw_tools)
-        props = cleaned[0]["parameters"]["properties"]
-        assert props["lat"]["type"] == "NUMBER"
-        assert "default" not in props["lat"]
-        assert props["name"]["type"] == "STRING"
+        fd = cleaned[0]
+        assert fd.name == "sample_tool"
+        props = fd.parameters.properties
+        assert props["lat"].type == types.Type.NUMBER
+        assert getattr(props["lat"], "default", None) is None
+        assert props["name"].type == types.Type.STRING
 
     def test_extract_step_result_handles_tool_calls(self):
         provider = GeminiProvider(api_key="test_key")
@@ -505,95 +508,94 @@ class TestRealGeminiSmokeTest:
 # ==============================================================================
 
 def test_gemini_provider_extracts_thought_signature():
-    """Verifies that GeminiProvider._extract_step_result captures thought_signature from tool call."""
+    """
+    Verifies that GeminiProvider._extract_step_result captures thought_signature
+    from real google.genai.types.Part with FunctionCall.
+    """
     from app.spatial_ai.providers.gemini_provider import GeminiProvider
-    from unittest.mock import MagicMock
+    from google.genai import types
 
     provider = GeminiProvider(api_key="test-key", model_name="gemini-3.8-flash")
 
-    # Create mock response candidate with thought_signature
-    mock_fn = MagicMock()
-    mock_fn.name = "find_nearest"
-    mock_fn.args = {"latitude": 0.5071, "longitude": 101.4478}
-    mock_fn.thought_signature = b"test-thought-signature-bytes"
+    # Real SDK objects (google.genai.types)
+    fc = types.FunctionCall(
+        name="find_nearest",
+        args={"latitude": 0.5071, "longitude": 101.4478},
+    )
+    part = types.Part(
+        function_call=fc,
+        thought_signature=b"test-thought-signature-bytes",
+    )
+    candidate = types.Candidate(
+        content=types.Content(role="model", parts=[part])
+    )
+    response = types.GenerateContentResponse(
+        candidates=[candidate]
+    )
 
-    mock_part = MagicMock()
-    mock_part.function_call = mock_fn
-    mock_part.text = None
-
-    mock_candidate = MagicMock()
-    mock_candidate.content.parts = [mock_part]
-
-    mock_response = MagicMock()
-    mock_response.candidates = [mock_candidate]
-
-    step_result = provider._extract_step_result(mock_response)
+    step_result = provider._extract_step_result(response)
     assert step_result.is_tool_call is True
     assert len(step_result.tool_calls) == 1
     call = step_result.tool_calls[0]
     assert call.tool_name == "find_nearest"
+    assert call.arguments == {"latitude": 0.5071, "longitude": 101.4478}
     assert call.thought_signature == b"test-thought-signature-bytes"
 
 
-def test_gemini_provider_send_tool_result_patches_signature_and_handles_unsupported():
+def test_gemini_provider_preserves_thought_signature_roundtrip_and_sends_function_response():
     """
-    Verifies that GeminiProvider.send_tool_result:
-    1. Patches missing thought_signature in preceding model history turn if supported.
-    2. Gracefully handles parts that do not support thought_signature without raising errors.
+    Verifies:
+    1. Real google.genai.types.Content preserves thought_signature losslessly across serialization/deserialization.
+    2. GeminiProvider.send_tool_result constructs genuine types.Part with function_response and dispatches to chat session.
     """
     from app.spatial_ai.providers.gemini_provider import GeminiProvider, GeminiSession
+    from google.genai import types
     from unittest.mock import MagicMock
 
+    # 1. Round-trip serialisasi Content model
+    fc = types.FunctionCall(name="find_nearest", args={"latitude": 0.5071})
+    signed_part = types.Part(function_call=fc, thought_signature=b"persisted-signature-bytes")
+    original_content = types.Content(role="model", parts=[signed_part])
+
+    json_dump = original_content.model_dump_json()
+    restored_content = types.Content.model_validate_json(json_dump)
+
+    assert restored_content.parts[0].thought_signature == b"persisted-signature-bytes"
+    assert restored_content.parts[0].function_call.name == "find_nearest"
+
+    # 2. send_tool_result sends real types.Part with function_response
     provider = GeminiProvider(api_key="test-key", model_name="gemini-3.8-flash")
-
-    # Case 1: Part supports thought_signature and is empty -> should be patched
-    class MockPartWithSig:
-        def __init__(self):
-            self.function_call = MagicMock()
-            self.thought_signature = None
-
-    part1 = MockPartWithSig()
-    mock_model_turn = MagicMock()
-    mock_model_turn.role = "model"
-    mock_model_turn.parts = [part1]
-
     mock_chat = MagicMock()
-    mock_chat.history = [mock_model_turn]
-    mock_chat.send_message.return_value = MagicMock(candidates=[MagicMock(content=MagicMock(parts=[MagicMock(function_call=None, text="Synthesis complete")]))])
+    sent_parts = []
 
-    session1 = GeminiSession(chat=mock_chat, model=MagicMock())
+    def mock_send(p):
+        sent_parts.append(p)
+        return types.GenerateContentResponse(
+            candidates=[
+                types.Candidate(
+                    content=types.Content(
+                        role="model",
+                        parts=[types.Part(text="Synthesis complete with ground truth")],
+                    )
+                )
+            ]
+        )
 
-    res1 = provider.send_tool_result(
-        session=session1,
+    mock_chat.send_message.side_effect = mock_send
+
+    session = GeminiSession(chat=mock_chat, model="gemini-3.8-flash")
+    result = provider.send_tool_result(
+        session=session,
         tool_name="find_nearest",
         result={"distance": 100},
-        thought_signature=b"restored-signature-bytes",
+        thought_signature=b"persisted-signature-bytes",
     )
-    assert part1.thought_signature == b"restored-signature-bytes"
-    assert res1.is_tool_call is False
 
-    # Case 2: Part does NOT support thought_signature -> no error, graceful degradation
-    class MockPartWithoutSig:
-        def __init__(self):
-            self.function_call = MagicMock()
-            # No thought_signature attribute
-
-    part2 = MockPartWithoutSig()
-    mock_model_turn2 = MagicMock()
-    mock_model_turn2.role = "model"
-    mock_model_turn2.parts = [part2]
-
-    mock_chat2 = MagicMock()
-    mock_chat2.history = [mock_model_turn2]
-    mock_chat2.send_message.return_value = MagicMock(candidates=[MagicMock(content=MagicMock(parts=[MagicMock(function_call=None, text="Synthesis complete")]))])
-
-    session2 = GeminiSession(chat=mock_chat2, model=MagicMock())
-
-    res2 = provider.send_tool_result(
-        session=session2,
-        tool_name="find_nearest",
-        result={"distance": 100},
-        thought_signature=b"restored-signature-bytes",
-    )
-    assert res2.is_tool_call is False
-    assert not hasattr(part2, "thought_signature")
+    assert len(sent_parts) == 1
+    sent_part = sent_parts[0]
+    assert isinstance(sent_part, types.Part)
+    assert sent_part.function_response is not None
+    assert sent_part.function_response.name == "find_nearest"
+    assert sent_part.function_response.response == {"result": {"distance": 100}}
+    assert result.is_tool_call is False
+    assert result.text == "Synthesis complete with ground truth"

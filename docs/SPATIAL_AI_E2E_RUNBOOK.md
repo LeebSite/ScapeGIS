@@ -258,7 +258,7 @@ The backend responds with `200 OK`:
 
 | Test ID | Scenario / Verification Scope | Classification | Expected Result | Actual Result | Status |
 |---|---|---|---|---|---|
-| `TC-UNIT-01` | Module 2C Chat Endpoint Suite (17 tests) | `[MOCK/UNIT]` | 17 tests pass | 17 passed | **PASS** |
+| `TC-UNIT-01` | Module 2C Chat Endpoint Suite (20 tests) | `[MOCK/UNIT]` | 20 tests pass | 20 passed | **PASS** |
 | `TC-UNIT-02` | Full Backend Spatial AI Test Suite (115 tests) | `[MOCK/UNIT]` | 114 pass, 1 skip | 114 passed, 1 skipped | **PASS** |
 | `TC-AUTH-01` | Missing Authorization Header | `[API-INTEG]` | HTTP 401 Unauthorized | HTTP 401 (`Not authenticated`) | **PASS** |
 | `TC-AUTH-02` | Invalid JWT Token | `[API-INTEG]` | HTTP 401 Unauthorized | HTTP 401 (`Invalid token`) | **PASS** |
@@ -268,26 +268,34 @@ The backend responds with `200 OK`:
 | `TC-VAL-03` | Conversation History Boundary (>10) | `[API-INTEG]` | HTTP 422 Validation Error | HTTP 422 (`limit of 10 messages`) | **PASS** |
 | `TC-DB-01` | PostGIS 3.6 Spatial KNN Calculation | `[DB-INTEG]` | Nearest hospital at ~1,077m | `Rumah Sakit Khusus` at `1,077.85 m` | **PASS** |
 | `TC-LIVE-01` | Live Gemini Single-Turn Generation | `[LIVE-PROV]` | Model answers basic prompt | Model responds `Pong` | **PASS** |
-| `TC-LIVE-02` | Live Gemini Agent Spatial Tool Loop | `[LIVE-PROV]` | Multi-turn tool execution | Tool round-trip executed & synthesized verified facts | **PASS** |
-| `TC-E2E-01` | Full UI-to-PostGIS End-to-End Chat | `[FULL-E2E]` | Complete UI chat round-trip | Verified round-trip (Gemini reasoning + PostGIS tool execution) | **PASS** |
+| `TC-LIVE-02` | Live Gemini Agent Spatial Tool Loop | `[LIVE-PROV]` | Multi-turn tool execution | Upstream 429 RESOURCE_EXHAUSTED (Free-tier 20 req/day limit reached) | **BLOCKED BY QUOTA** |
+| `TC-E2E-01` | Full UI-to-PostGIS End-to-End Chat | `[FULL-E2E]` | Complete UI chat round-trip | Upstream 429 RESOURCE_EXHAUSTED (Free-tier 20 req/day limit reached) | **BLOCKED BY QUOTA** |
 
 ---
 
-## F. Defect Resolution & Verification Log
+## F. Defect Resolution & Verification Log (v2 — google-genai Migration)
 
 ### Defect Identifier: `DEF-GEMINI-THOUGHT-SIGNATURE`
 - **Severity**: High (Historical Blocker)
-- **Status**: **RESOLVED & VERIFIED**
-- **Component**: `backend/app/spatial_ai/providers/gemini_provider.py`, `backend/app/spatial_ai/agent.py`, `backend/requirements.txt`
-- **Root Cause Identified**:
-  1. The pinned SDK `google-generativeai==0.4.1` (early 2024) lacked internal support for propagating `thought_signature` in reasoning/thinking-enabled models (`gemini-3.8-flash`).
-  2. When `GeminiProvider.send_tool_result()` fed tool output back to the chat session, missing thought signatures in the conversation turn triggered Google API 400 `BadRequest`.
-- **Remediation Implemented**:
-  1. **SDK Upgrade**: Upgraded `google-generativeai` to `0.8.5` (with `google-ai-generativelanguage==0.8.0`) in `backend/requirements.txt`.
-  2. **Signature Extraction**: Enhanced `GeminiProvider._extract_step_result` to capture and preserve `thought_signature` from tool call parts.
-  3. **History Turn Synchronization**: In `GeminiProvider.send_tool_result`, safely ensured preceding model turn parts retain `thought_signature` while maintaining backwards-compatibility and handling unsupported parts gracefully.
-  4. **Agent Safe Kwargs**: Updated `GeminiSpatialAgent._run_orchestration_loop` to conditionally pass `thought_signature` with fallback exception handling.
-  5. **Regression & Hardening Tests**: Added unit tests verifying extraction and fallback patching in `backend/tests/test_gemini_spatial_agent.py`.
+- **Status**: **CODEBASE RESOLVED (SDK MIGRATION COMPLETE)** / Live Traffic Blocked by Free-Tier Quota (429)
+- **Component**: `backend/app/spatial_ai/providers/gemini_provider.py`, `backend/requirements.txt`, `backend/tests/conftest.py`, `backend/tests/test_gemini_spatial_agent.py`
+- **Root Cause Verified (Audit v2)**:
+  1. Lini SDK `google-generativeai` telah deprecated/EOL sejak 31 Agustus 2025. Versi terakhirnya `0.8.5` mewajibkan pin exact `google-ai-generativelanguage==0.6.15`.
+  2. Pada `google-ai-generativelanguage==0.6.15`, protobuf descriptor `Part` dan `FunctionCall` tidak memiliki field `thought_signature`, sehingga ekstraksi signature selalu `None` dan manipulasi history sebelumnya adalah no-op di production.
+- **Remediation Implemented (v2 Migration)**:
+  1. **SDK Migration**: Menghapus `google-generativeai==0.8.5` dan mengadopsi SDK resmi penerus `google-genai==2.29.0` (bersama `httpx==0.28.1`) di `backend/requirements.txt`.
+  2. **Native Part Field**: Pada `google.genai.types.Part`, field `thought_signature` (dan `thought`) tersedia secara native (`assert 'thought_signature' in types.Part.model_fields`).
+  3. **Provider Migration**:
+     - Memigrasikan `GeminiProvider` menggunakan `genai.Client(api_key=..., http_options=types.HttpOptions(timeout=...))`.
+     - Sesi chat dibangun via `client.chats.create(model=..., config=types.GenerateContentConfig(...), history=...)`.
+     - Tool declarations dibungkus ke `types.Tool(function_declarations=[types.FunctionDeclaration(...)])`.
+     - Ekstraksi `thought_signature` diambil langsung dari objek `types.Part` (bukan dari FunctionCall).
+     - Pengiriman hasil tool menggunakan `types.Part.from_function_response(name=..., response=...)`. Preservasi signature dilakukan secara native oleh SDK tanpa mutasi manual.
+  4. **HTTPX 0.28 / Starlette Compatibility**: Menambahkan `backend/tests/conftest.py` untuk mengadaptasi `starlette.testclient.TestClient` yang memanggil `httpx.Client(app=app)` ke `httpx.ASGITransport(app=app)`.
+  5. **Unit Tests dengan SDK Types Asli**: Menulis ulang test di `backend/tests/test_gemini_spatial_agent.py` menggunakan objek SDK asli (`google.genai.types.Part`, `FunctionCall`, `Candidate`, `GenerateContentResponse`, `Content`) untuk memverifikasi ekstraksi dan round-trip serialisasi/deserialisasi signature secara lossless.
 - **Verification Evidence**:
-  - `TC-UNIT-02`: 114 unit & integration tests passed (1 skipped).
-  - `TC-LIVE-02` & `TC-E2E-01`: Live multi-turn tool execution with Google Gemini (`gemini-3.8-flash`) executed `find_nearest` on PostGIS layers in Pekanbaru dataset and returned verified analytical synthesis with 0 errors.
+  - `TC-UNIT-01`: 20 test chat passed.
+  - `TC-UNIT-02`: 114 test passed, 1 skipped, 0 failed.
+  - Field check: `assert 'thought_signature' in types.Part.model_fields` -> OK.
+  - Handshake check: Handshake Google API bebas dari error HTTP 400 (`thought_signature missing`).
+  - Live execution limitation: Permintaan live saat ini mengembalikan Google AI Studio HTTP 429 `RESOURCE_EXHAUSTED` (`generativelanguage.googleapis.com/generate_content_free_tier_requests`, limit 20 per hari untuk `gemini-3.8-flash`).

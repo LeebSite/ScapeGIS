@@ -1,14 +1,14 @@
-﻿"""
+"""
 Google Gemini Spatial AI Provider
 
 Concrete implementation of BaseSpatialAIProvider utilizing the official
-Google Gemini SDK (google-generativeai). Handles tool declarations,
+Google GenAI SDK (google-genai). Handles tool declarations,
 chat sessions, function-calling handshakes, and error handling.
 """
 from typing import Dict, Any, List, Optional
-import google.generativeai as genai
-import google.ai.generativelanguage as glm
-from google.api_core.exceptions import GoogleAPICallError, DeadlineExceeded, ResourceExhausted
+import httpx
+from google import genai
+from google.genai import types, errors
 
 from app.core.config import settings
 from app.spatial_ai.providers.base import (
@@ -25,15 +25,16 @@ from app.spatial_ai.exceptions import (
 
 class GeminiSession:
     """Encapsulates an active Gemini chat session."""
-    def __init__(self, chat: Any, model: Any):
+    def __init__(self, chat: Any, model: Any = None, client: Any = None):
         self.chat = chat
         self.model = model
+        self.client = client
 
 
 class GeminiProvider(BaseSpatialAIProvider):
     """
-    Provider implementation for Google Gemini models.
-    Supports multi-turn tool calling with strict ground truth boundaries.
+    Provider implementation for Google Gemini models using the official google-genai SDK.
+    Supports multi-turn tool calling with strict ground truth boundaries and thought_signature.
     """
 
     def __init__(
@@ -56,36 +57,32 @@ class GeminiProvider(BaseSpatialAIProvider):
 
     def _prepare_tool_declarations(
         self, tool_declarations: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    ) -> List[types.FunctionDeclaration]:
         """
-        Cleans and adapts tool declarations for protobuf Schema compatibility:
-        - Ensures type strings are uppercase (STRING, NUMBER, INTEGER, etc.)
-        - Removes unsupported fields like 'default'
+        Adapts tool declarations for google-genai FunctionDeclaration:
+        - Ensures parameter types are Schema compatible
+        - Strips 'default' attributes for strict schema conformity
         """
-        cleaned = []
+        declarations = []
         for decl in tool_declarations:
-            copy_decl = {
-                "name": decl["name"],
-                "description": decl.get("description", ""),
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {},
-                    "required": decl.get("parameters", {}).get("required", []),
-                },
-            }
-            props = decl.get("parameters", {}).get("properties", {})
+            copy_params = dict(decl.get("parameters", {}))
+            props = dict(copy_params.get("properties", {}))
+            cleaned_props = {}
             for p_name, p_def in props.items():
-                p_type = str(p_def.get("type", "STRING")).upper()
-                cleaned_prop = {
-                    "type": p_type,
-                    "description": p_def.get("description", ""),
-                }
-                if "enum" in p_def:
-                    cleaned_prop["enum"] = p_def["enum"]
-                copy_decl["parameters"]["properties"][p_name] = cleaned_prop
-
-            cleaned.append(copy_decl)
-        return cleaned
+                p_copy = dict(p_def)
+                if "type" in p_copy:
+                    p_copy["type"] = str(p_copy["type"]).upper()
+                p_copy.pop("default", None)
+                cleaned_props[p_name] = p_copy
+            copy_params["properties"] = cleaned_props
+            declarations.append(
+                types.FunctionDeclaration(
+                    name=decl["name"],
+                    description=decl.get("description", ""),
+                    parameters=copy_params,
+                )
+            )
+        return declarations
 
     def start_conversation(
         self,
@@ -93,42 +90,55 @@ class GeminiProvider(BaseSpatialAIProvider):
         tool_declarations: List[Dict[str, Any]],
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> GeminiSession:
-        """Configures Gemini model with tool declarations, primes system instruction, and appends prior history."""
+        """Configures Gemini model with tool declarations, system instruction, and appends prior history."""
         if not self.api_key:
             raise ProviderConfigurationError(
                 "Gemini API key is not configured. Please set GEMINI_API_KEY in backend configuration or .env."
             )
 
         try:
-            genai.configure(api_key=self.api_key, transport="rest")
-            cleaned_tools = self._prepare_tool_declarations(tool_declarations)
-
-            model = genai.GenerativeModel(
-                model_name=self.model_name,
-                tools=cleaned_tools if cleaned_tools else None,
+            client = genai.Client(
+                api_key=self.api_key,
+                http_options=types.HttpOptions(timeout=int(self.timeout_seconds * 1000)),
             )
 
-            # Prime conversation with system instruction in initial history
-            init_history = [
-                {
-                    "role": "user",
-                    "parts": [f"[SYSTEM INSTRUCTION]\n{system_instruction}"],
-                },
-                {
-                    "role": "model",
-                    "parts": [
-                        "Understood. I am ScapeGIS Spatial AI. I will analyze questions, invoke spatial tools to obtain ground truth PostGIS facts, and synthesize verified reasoning without hallucinating numbers."
-                    ],
-                },
-            ]
+            tools = None
+            if tool_declarations:
+                fds = self._prepare_tool_declarations(tool_declarations)
+                tools = [types.Tool(function_declarations=fds)]
+
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                tools=tools,
+            )
+
+            contents_history: Optional[List[types.Content]] = None
             if history:
-                init_history.extend(history)
+                contents_history = []
+                for turn in history:
+                    role_raw = turn.get("role", "user")
+                    role = "model" if role_raw in ("model", "assistant") else "user"
+                    parts = []
+                    for p in turn.get("parts", []):
+                        if isinstance(p, types.Part):
+                            parts.append(p)
+                        elif isinstance(p, str):
+                            parts.append(types.Part.from_text(text=p))
+                        elif isinstance(p, dict):
+                            if "text" in p:
+                                parts.append(types.Part.from_text(text=p["text"]))
+                            else:
+                                parts.append(types.Part.model_validate(p))
+                        else:
+                            parts.append(types.Part.from_text(text=str(p)))
+                    contents_history.append(types.Content(role=role, parts=parts))
 
-            chat = model.start_chat(
-                history=init_history,
-                enable_automatic_function_calling=False,
+            chat = client.chats.create(
+                model=self.model_name,
+                config=config,
+                history=contents_history,
             )
-            return GeminiSession(chat=chat, model=model)
+            return GeminiSession(chat=chat, model=self.model_name, client=client)
 
         except Exception as e:
             if isinstance(e, ProviderConfigurationError):
@@ -140,10 +150,17 @@ class GeminiProvider(BaseSpatialAIProvider):
 
     def _extract_step_result(self, response: Any) -> ProviderStepResult:
         """Extracts tool calls or text response from Gemini response candidate."""
-        if not response.candidates:
+        if not response or not getattr(response, "candidates", None):
             raise MalformedModelResponseError("Gemini returned an empty response with no candidates.")
 
         candidate = response.candidates[0]
+        if not getattr(candidate, "content", None) or not getattr(candidate.content, "parts", None):
+            return ProviderStepResult(
+                is_tool_call=False,
+                tool_calls=[],
+                text="No response generated.",
+            )
+
         tool_calls: List[ToolCallRequest] = []
         texts: List[str] = []
 
@@ -153,11 +170,16 @@ class GeminiProvider(BaseSpatialAIProvider):
                 args = {}
                 if hasattr(fn, "args") and fn.args:
                     args = dict(fn.args)
-                thought_sig = getattr(fn, "thought_signature", None)
-                if (thought_sig is None or not isinstance(thought_sig, (bytes, bytearray))) and hasattr(part, "thought_signature"):
-                    thought_sig = getattr(part, "thought_signature", None)
-                if thought_sig is not None and not isinstance(thought_sig, (bytes, bytearray)):
+                
+                # Take thought_signature from Part (part.thought_signature), NOT from FunctionCall
+                thought_sig = getattr(part, "thought_signature", None)
+                if isinstance(thought_sig, (bytes, bytearray)):
+                    thought_sig = bytes(thought_sig)
+                elif isinstance(thought_sig, str):
+                    thought_sig = thought_sig.encode("utf-8")
+                else:
                     thought_sig = None
+
                 tool_calls.append(
                     ToolCallRequest(
                         tool_name=fn.name,
@@ -190,20 +212,25 @@ class GeminiProvider(BaseSpatialAIProvider):
         try:
             response = session.chat.send_message(message)
             return self._extract_step_result(response)
-        except DeadlineExceeded as e:
+        except errors.APIError as e:
+            if getattr(e, "code", None) == 429 or "quota" in str(e).lower() or "resource_exhausted" in str(e).lower():
+                raise ProviderExecutionError(
+                    "Gemini API rate limit or quota exceeded.",
+                    details={"error": str(e)},
+                )
+            if getattr(e, "code", None) in (408, 504) or "timeout" in str(e).lower() or "deadline" in str(e).lower():
+                raise ProviderExecutionError(
+                    f"Gemini request timed out after {self.timeout_seconds}s.",
+                    details={"timeout": self.timeout_seconds, "error": str(e)},
+                )
+            raise ProviderExecutionError(
+                f"Gemini API error: {getattr(e, 'message', None) or str(e)}",
+                details={"code": getattr(e, "code", None), "error": str(e)},
+            )
+        except (httpx.TimeoutException, TimeoutError) as e:
             raise ProviderExecutionError(
                 f"Gemini request timed out after {self.timeout_seconds}s.",
                 details={"timeout": self.timeout_seconds, "error": str(e)},
-            )
-        except ResourceExhausted as e:
-            raise ProviderExecutionError(
-                "Gemini API rate limit or quota exceeded.",
-                details={"error": str(e)},
-            )
-        except GoogleAPICallError as e:
-            raise ProviderExecutionError(
-                f"Gemini API error: {e.message if hasattr(e, 'message') else str(e)}",
-                details={"code": getattr(e, "code", None), "error": str(e)},
             )
         except Exception as e:
             if isinstance(e, (ProviderConfigurationError, ProviderExecutionError, MalformedModelResponseError)):
@@ -222,47 +249,30 @@ class GeminiProvider(BaseSpatialAIProvider):
     ) -> ProviderStepResult:
         """Feeds tool execution output back to Gemini model as a FunctionResponse."""
         try:
-            # Before sending, ensure preceding model function_call in history carries signature if supported
-            if thought_signature and hasattr(session, "chat") and hasattr(session.chat, "history"):
-                for content in reversed(session.chat.history):
-                    if getattr(content, "role", None) == "model" and hasattr(content, "parts"):
-                        for p in content.parts:
-                            if hasattr(p, "function_call") and p.function_call:
-                                if hasattr(p, "thought_signature") and not getattr(p, "thought_signature", None):
-                                    try:
-                                        p.thought_signature = thought_signature
-                                    except Exception:
-                                        pass
-                                if hasattr(p.function_call, "thought_signature") and not getattr(p.function_call, "thought_signature", None):
-                                    try:
-                                        p.function_call.thought_signature = thought_signature
-                                    except Exception:
-                                        pass
-                                break
-                        break
-
-            # Construct protobuf FunctionResponse Part
-            part = glm.Part(
-                function_response=glm.FunctionResponse(
-                    name=tool_name,
-                    response={"result": result},
-                )
+            part = types.Part.from_function_response(
+                name=tool_name,
+                response={"result": result},
             )
             response = session.chat.send_message(part)
             return self._extract_step_result(response)
-        except DeadlineExceeded as e:
-            raise ProviderExecutionError(
-                f"Gemini request timed out during tool result return ({self.timeout_seconds}s).",
-                details={"tool_name": tool_name, "error": str(e)},
-            )
-        except ResourceExhausted as e:
-            raise ProviderExecutionError(
-                "Gemini API quota exceeded during tool feedback.",
-                details={"tool_name": tool_name, "error": str(e)},
-            )
-        except GoogleAPICallError as e:
+        except errors.APIError as e:
+            if getattr(e, "code", None) == 429 or "quota" in str(e).lower() or "resource_exhausted" in str(e).lower():
+                raise ProviderExecutionError(
+                    "Gemini API quota exceeded during tool feedback.",
+                    details={"tool_name": tool_name, "error": str(e)},
+                )
+            if getattr(e, "code", None) in (408, 504) or "timeout" in str(e).lower() or "deadline" in str(e).lower():
+                raise ProviderExecutionError(
+                    f"Gemini request timed out during tool result return ({self.timeout_seconds}s).",
+                    details={"tool_name": tool_name, "error": str(e)},
+                )
             raise ProviderExecutionError(
                 f"Gemini API error during tool feedback: {str(e)}",
+                details={"tool_name": tool_name, "error": str(e)},
+            )
+        except (httpx.TimeoutException, TimeoutError) as e:
+            raise ProviderExecutionError(
+                f"Gemini request timed out during tool result return ({self.timeout_seconds}s).",
                 details={"tool_name": tool_name, "error": str(e)},
             )
         except Exception as e:
