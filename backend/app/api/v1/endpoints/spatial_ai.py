@@ -74,6 +74,11 @@ def analyze_spatial_query(
         )
     except ProviderExecutionError as e:
         logger.error("Spatial AI provider execution error: %s", e.message, exc_info=True)
+        if e.details and e.details.get("payload_too_large"):
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Spatial context too large for the provider's token limit; try a narrower question.",
+            )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Spatial AI provider service encountered an error while processing the request.",
@@ -147,6 +152,11 @@ def chat_spatial_query(
         )
     except ProviderExecutionError as e:
         logger.error("Spatial AI provider execution error: %s", e.message, exc_info=True)
+        if e.details and e.details.get("payload_too_large"):
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Spatial context too large for the provider's token limit; try a narrower question.",
+            )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Spatial AI provider service encountered an error while processing the request.",

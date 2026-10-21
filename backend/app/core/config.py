@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "openai/gpt-oss-120b"
     GROQ_TIMEOUT_SECONDS: int = 30
     GROQ_REASONING_EFFORT: str = "medium"
-    GROQ_MAX_COMPLETION_TOKENS: int = 2048
+    GROQ_MAX_COMPLETION_TOKENS: int = 1024
 
     @field_validator("SPATIAL_AI_PROVIDER")
     @classmethod

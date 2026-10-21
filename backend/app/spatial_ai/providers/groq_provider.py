@@ -83,7 +83,7 @@ def convert_gemini_tools_to_groq(tool_declarations: List[Dict[str, Any]]) -> Lis
     for decl in tool_declarations:
         name = decl.get("name", "")
         desc = decl.get("description", "")
-        params = decl.get("parameters", {})
+        params = decl.get("parameters") or {}
         converted_params = convert_gemini_schema_to_openai(params)
         if "type" not in converted_params:
             converted_params["type"] = "object"
@@ -124,7 +124,16 @@ def convert_history_to_groq(history: Optional[List[Dict[str, Any]]]) -> List[Dic
             continue
 
         if "parts" in item and isinstance(item["parts"], list):
-            content = "\n".join(str(p) for p in item["parts"] if p is not None)
+            parts_str: List[str] = []
+            for p in item["parts"]:
+                if p is None:
+                    continue
+                if isinstance(p, dict):
+                    text_val = p.get("text") or p.get("content") or ""
+                    parts_str.append(str(text_val))
+                else:
+                    parts_str.append(str(p))
+            content = "\n".join(parts_str)
         else:
             content = str(item.get("content", ""))
 
@@ -152,6 +161,7 @@ class GroqSession:
         self.max_completions = max_completions
         self.completion_count: int = 0
         self.pending_tool_call_id: Optional[str] = None
+        self.pending_tool_name: Optional[str] = None
 
 
 class GroqProvider(BaseSpatialAIProvider):
@@ -183,7 +193,7 @@ class GroqProvider(BaseSpatialAIProvider):
         self.max_completion_tokens = (
             max_completion_tokens
             if max_completion_tokens is not None
-            else getattr(settings, "GROQ_MAX_COMPLETION_TOKENS", 2048)
+            else getattr(settings, "GROQ_MAX_COMPLETION_TOKENS", 1024)
         )
 
         if not self.api_key or not self.api_key.strip():
@@ -232,6 +242,11 @@ class GroqProvider(BaseSpatialAIProvider):
         if not isinstance(session, GroqSession):
             raise ProviderExecutionError("Invalid session passed to GroqProvider. Expected GroqSession.")
 
+        if session.pending_tool_call_id:
+            raise ProviderExecutionError(
+                f"Cannot send user message while tool call '{session.pending_tool_name or session.pending_tool_call_id}' is pending."
+            )
+
         session.messages.append({"role": "user", "content": message})
         return self._execute_completion(session, turn_type="user_message")
 
@@ -255,6 +270,11 @@ class GroqProvider(BaseSpatialAIProvider):
                 "Cannot return tool result: no pending tool_call_id found in active GroqSession."
             )
 
+        if session.pending_tool_name and tool_name != session.pending_tool_name:
+            raise MalformedModelResponseError(
+                f"Mismatched tool result: expected '{session.pending_tool_name}', got '{tool_name}'."
+            )
+
         tool_content = json.dumps(result, ensure_ascii=False)
         tool_message = {
             "role": "tool",
@@ -263,6 +283,7 @@ class GroqProvider(BaseSpatialAIProvider):
         }
         session.messages.append(tool_message)
         session.pending_tool_call_id = None
+        session.pending_tool_name = None
 
         return self._execute_completion(session, turn_type="tool_result")
 
@@ -316,9 +337,20 @@ class GroqProvider(BaseSpatialAIProvider):
             )
         except APIStatusError as e:
             retry_after = getattr(e.response, "headers", {}).get("retry-after") if hasattr(e, "response") else None
+            details: Dict[str, Any] = {
+                "status_code": e.status_code,
+                "retry_after": retry_after,
+                "error": str(e),
+            }
+            if e.status_code == 413:
+                details["payload_too_large"] = True
+                raise ProviderExecutionError(
+                    f"Groq API error (413): Request payload too large for model. {e.message}",
+                    details=details,
+                )
             raise ProviderExecutionError(
                 f"Groq API error ({e.status_code}): {e.message}",
-                details={"status_code": e.status_code, "retry_after": retry_after, "error": str(e)},
+                details=details,
             )
         except APITimeoutError as e:
             raise ProviderExecutionError(
@@ -388,6 +420,7 @@ class GroqProvider(BaseSpatialAIProvider):
                 ],
             })
             session.pending_tool_call_id = tc.id
+            session.pending_tool_name = tool_name
 
             logger.info(
                 "Groq completion turn: provider=groq, model=%s, turn_type=%s, messages_count=%d, "
@@ -431,11 +464,17 @@ class GroqProvider(BaseSpatialAIProvider):
                 "Groq completion response contains neither tool_calls nor message content."
             )
 
+        if not message.content.strip():
+            raise MalformedModelResponseError(
+                "Groq completion response contains empty or whitespace-only message content."
+            )
+
         session.messages.append({
             "role": "assistant",
             "content": message.content,
         })
         session.pending_tool_call_id = None
+        session.pending_tool_name = None
 
         logger.info(
             "Groq completion turn: provider=groq, model=%s, turn_type=%s, messages_count=%d, "

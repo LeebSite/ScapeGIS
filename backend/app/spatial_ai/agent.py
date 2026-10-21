@@ -453,6 +453,96 @@ class GeminiSpatialAgent:
         else:
             return {"output": str(tool_output)}
 
+        is_spatial_context = (
+            isinstance(tool_output, GetSpatialContextOutput)
+            or ("facts" in d and any(k in d for k in ("transportation", "facilities", "religious", "administrative")))
+        )
+
+        if is_spatial_context:
+            # 1. Drop duplicated category dicts from LLM payload
+            for cat in ("transportation", "facilities", "religious", "administrative"):
+                d.pop(cat, None)
+
+            # 2. Build layer_id -> short reference mapping from sources
+            src_map: Dict[str, str] = {}
+            if "sources" in d and isinstance(d["sources"], list):
+                for s in d["sources"]:
+                    if isinstance(s, dict) and s.get("layer_id"):
+                        lname = s.get("layer_name") or ""
+                        subcat = s.get("semantic_subcategory") or s.get("subcategory") or ""
+                        ref = f"{lname} ({subcat})" if lname and subcat else (lname or subcat or "layer")
+                        src_map[str(s["layer_id"])] = ref
+
+            # 3. Clean facts: drop nearest_properties and administrative properties,
+            # preserve extracted name (area_name / display_name), replace full UUIDs with short refs
+            if "facts" in d and isinstance(d["facts"], list):
+                raw_facts = d["facts"]
+                total_facts = len(raw_facts)
+                if total_facts > 40:
+                    d["facts"] = raw_facts[:40]
+                    d["truncation"] = {
+                        "truncated": True,
+                        "total_facts": total_facts,
+                        "facts_shown": 40,
+                    }
+                    d["truncated"] = True
+                    d["total_facts"] = total_facts
+                    d["facts_shown"] = 40
+
+                for f in d["facts"]:
+                    if not isinstance(f, dict):
+                        continue
+
+                    # Drop nearest_properties entirely, extract name
+                    if "nearest_properties" in f:
+                        props = f.pop("nearest_properties", None) or {}
+                        name = (
+                            props.get("NAMOBJ")
+                            or props.get("REMARK")
+                            or props.get("name")
+                            or props.get("nama")
+                            or props.get("Nama")
+                            or f.get("display_name")
+                        )
+                        if name and not f.get("name"):
+                            f["name"] = name
+
+                    # Drop administrative properties entirely, extract area_name
+                    if "properties" in f:
+                        props = f.pop("properties", None) or {}
+                        area = (
+                            f.get("area_name")
+                            or props.get("NAMOBJ")
+                            or props.get("REMARK")
+                            or props.get("WADMKC")
+                            or props.get("WADMKK")
+                            or f.get("display_name")
+                        )
+                        if area:
+                            f["area_name"] = area
+
+                    # Replace full UUIDs with short references (layer_name + subcategory)
+                    if "layer_id" in f and f["layer_id"]:
+                        lid_str = str(f["layer_id"])
+                        if lid_str in src_map:
+                            f["layer_id"] = src_map[lid_str]
+                        else:
+                            lname = f.get("display_name") or "layer"
+                            subcat = f.get("subcategory") or ""
+                            f["layer_id"] = f"{lname} ({subcat})" if subcat else lname
+
+            # 4. In sources, replace full UUIDs with short references
+            if "sources" in d and isinstance(d["sources"], list):
+                for s in d["sources"]:
+                    if isinstance(s, dict):
+                        lname = s.get("layer_name") or ""
+                        subcat = s.get("semantic_subcategory") or s.get("subcategory") or ""
+                        s["layer_id"] = f"{lname} ({subcat})" if lname and subcat else (lname or subcat or "layer")
+                        if "dataset_id" in s:
+                            s["dataset_id"] = s.get("dataset_name") or "dataset"
+
+            return d
+
         # Filter out bulky geometry strings or excessive nested arrays
         if "features" in d and isinstance(d["features"], list):
             # Limit features passed into LLM prompt

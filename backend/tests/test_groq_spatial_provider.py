@@ -671,3 +671,326 @@ def test_g_unit_16_agent_orchestration_with_groq_provider():
             assert response.tool_calls[0]["success"] is True
             assert len(response.facts) == 1
             assert "Rumah Sakit Khusus" in response.facts[0].statement
+
+
+# ---------------------------------------------------------------------------
+# G-UNIT-17: Sanitizer Budget and Truncation Test
+# ---------------------------------------------------------------------------
+def test_g_unit_17_sanitizer_budget_and_truncation():
+    """
+    Sanitizer budget test with a synthetic 19-layer GetSpatialContextOutput fixture:
+    - asserts LLM payload contains NO nearest_properties and NO administrative full properties
+    - distances, counts, names, and per-layer identity are preserved
+    - truncation marker with counts appears when cap (40) is exceeded
+    - serialized payload estimate (chars / 4) is below 5,500 estimated tokens
+    """
+    from app.spatial_ai.agent import GeminiSpatialAgent
+    from app.spatial_ai.schemas import GetSpatialContextOutput, SpatialProvenance
+
+    sources = []
+    facts = []
+    # Build 19 synthetic layers
+    for i in range(19):
+        layer_id = f"11111111-2222-3333-4444-{i:012d}"
+        layer_name = f"Layer_{i:02d}"
+        subcat = f"subcat_{i:02d}"
+        sources.append(
+            SpatialProvenance(
+                dataset_id="00000000-0000-0000-0000-000000000001",
+                dataset_name="Synthetic Dataset",
+                layer_id=layer_id,
+                layer_name=layer_name,
+                semantic_category="facility",
+                semantic_subcategory=subcat,
+                operation="nearest_feature",
+            )
+        )
+        # Add 3 facts per layer (total 57 facts > 40 cap)
+        for j in range(3):
+            if i == 0 and j == 0:
+                # Administrative containment fact
+                facts.append({
+                    "type": "containment",
+                    "category": "administrative",
+                    "subcategory": "boundary",
+                    "display_name": "Boundary Layer",
+                    "area_name": "KECAMATAN_TEST",
+                    "properties": {"NAMOBJ": "KECAMATAN_TEST", "EXTRA_BULK": "X" * 200, "LCODE": "BA001"},
+                })
+            else:
+                facts.append({
+                    "type": "nearest_feature",
+                    "category": "facility",
+                    "subcategory": subcat,
+                    "layer_id": layer_id,
+                    "display_name": f"Feature {i}_{j}",
+                    "distance_meters": 150.0 + i * 10 + j,
+                    "count_within_2km": 2 + j,
+                    "nearest_properties": {
+                        "NAMOBJ": f"Facility Name {i}_{j}",
+                        "REMARK": "Remark text",
+                        "BULK_ATTR": "B" * 150,
+                    },
+                })
+
+    fixture = GetSpatialContextOutput(
+        success=True,
+        target={"latitude": 0.5071, "longitude": 101.4478},
+        workspace_id="2a12cd6e-3644-4f72-989b-ac7737d06e3a",
+        project_id="86d49543-f049-4060-a6b1-bb0bbde88ec9",
+        transportation={"duplicate_cat": True, "bulk": "T" * 500},
+        facilities={"duplicate_cat": True, "bulk": "F" * 500},
+        religious={"duplicate_cat": True, "bulk": "R" * 500},
+        administrative={"duplicate_cat": True, "bulk": "A" * 500},
+        facts=facts,
+        sources=sources,
+    )
+
+    agent = GeminiSpatialAgent(provider=MagicMock())
+    sanitized = agent._sanitize_result_for_llm(fixture)
+
+    # 1. Duplicated category dicts dropped
+    for cat in ("transportation", "facilities", "religious", "administrative"):
+        assert cat not in sanitized
+
+    # 2. Assert NO nearest_properties and NO administrative full properties
+    for f in sanitized["facts"]:
+        assert "nearest_properties" not in f
+        assert "properties" not in f
+
+    # 3. Distances, counts, names, per-layer identity preserved
+    admin_fact = sanitized["facts"][0]
+    assert admin_fact["area_name"] == "KECAMATAN_TEST"
+    assert admin_fact["type"] == "containment"
+
+    sample_f = sanitized["facts"][1]
+    assert sample_f["name"] == "Facility Name 0_1"
+    assert sample_f["distance_meters"] == 151.0
+    assert sample_f["count_within_2km"] == 3
+    # Per-layer identity preserved without raw UUID
+    assert "Layer_00" in sample_f["layer_id"]
+    assert "11111111" not in sample_f["layer_id"]
+
+    # 4. Truncation marker appears because total_facts (57) > 40
+    assert len(sanitized["facts"]) == 40
+    assert sanitized.get("truncated") is True or sanitized.get("truncation", {}).get("truncated") is True
+    total = sanitized.get("total_facts") or sanitized.get("truncation", {}).get("total_facts")
+    shown = sanitized.get("facts_shown") or sanitized.get("truncation", {}).get("facts_shown")
+    assert total == 57
+    assert shown == 40
+
+    # 5. Token budget: chars / 4 below 5,500 estimated tokens
+    payload_str = json.dumps(sanitized)
+    est_tokens = len(payload_str) / 4
+    assert est_tokens < 5500
+
+
+# ---------------------------------------------------------------------------
+# G-UNIT-18: Provider and Endpoint 413 Mapping Test
+# ---------------------------------------------------------------------------
+def test_g_unit_18_provider_and_endpoint_413_mapping():
+    """
+    Test 413 mapping:
+    - Provider: APIStatusError(413) -> ProviderExecutionError(payload_too_large=True)
+    - Endpoint: ProviderExecutionError(payload_too_large=True) -> HTTP 413 with sanitized detail
+    """
+    from groq import APIStatusError
+    import httpx
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.core.security import create_access_token
+    from app.db.session import SessionLocal
+    from app.db.models.user import User
+
+    # 1. Provider-level test
+    mock_client = MagicMock()
+    req = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    resp = httpx.Response(413, request=req, json={"error": {"message": "Request too large for model on TPM"}})
+    mock_client.chat.completions.with_raw_response.create.side_effect = APIStatusError(
+        message="Request too large for model on TPM",
+        response=resp,
+        body={"error": {"message": "Request too large for model on TPM"}},
+    )
+    provider = GroqProvider(api_key="gsk_test_key", client=mock_client)
+    session = provider.start_conversation(system_instruction="sys", tool_declarations=[])
+
+    with pytest.raises(ProviderExecutionError) as exc_info:
+        provider.send_user_message(session, "test question")
+
+    err = exc_info.value
+    assert err.details.get("status_code") == 413
+    assert err.details.get("payload_too_large") is True
+
+    # 2. Endpoint-level test
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == "ghalibpradipaa04@gmail.com").first()
+        token = create_access_token(data={"sub": str(user.id)})
+    finally:
+        db.close()
+
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    payload = {
+        "message": "Ringkasan spasial",
+        "workspace_id": "2a12cd6e-3644-4f72-989b-ac7737d06e3a",
+        "latitude": 0.5071,
+        "longitude": 101.4478,
+    }
+
+    with patch("app.api.v1.endpoints.spatial_ai.GeminiSpatialAgent") as MockAgentCls:
+        mock_agent = MockAgentCls.return_value
+        mock_agent.chat.side_effect = ProviderExecutionError(
+            "Groq API error (413): Request payload too large for model.",
+            details={"status_code": 413, "payload_too_large": True},
+        )
+        resp_chat = client.post("/api/v1/spatial-ai/chat", headers=headers, json=payload)
+        assert resp_chat.status_code == 413
+        assert resp_chat.json()["detail"] == "Spatial context too large for the provider's token limit; try a narrower question."
+
+        mock_agent.analyze.side_effect = ProviderExecutionError(
+            "Groq API error (413)",
+            details={"status_code": 413, "payload_too_large": True},
+        )
+        resp_analyze = client.post("/api/v1/spatial-ai/analyze", headers=headers, json={"workspace_id": "2a12cd6e-3644-4f72-989b-ac7737d06e3a", "latitude": 0.5071, "longitude": 101.4478, "message": "Analisis lokasi"})
+        assert resp_analyze.status_code == 413
+        assert resp_analyze.json()["detail"] == "Spatial context too large for the provider's token limit; try a narrower question."
+
+
+# ---------------------------------------------------------------------------
+# G-UNIT-19: Send Tool Result Name Mismatch
+# ---------------------------------------------------------------------------
+def test_g_unit_19_send_tool_result_name_mismatch():
+    """Rejects tool result if supplied tool_name does not match pending tool name."""
+    provider = GroqProvider(api_key="gsk_test_key", client=MagicMock())
+    session = provider.start_conversation(system_instruction="sys", tool_declarations=[])
+    session.pending_tool_call_id = "call_abc123"
+    session.pending_tool_name = "find_nearest"
+
+    with pytest.raises(MalformedModelResponseError) as exc_info:
+        provider.send_tool_result(session, tool_name="search_radius", result={"count": 0})
+    assert "Mismatched tool result" in str(exc_info.value)
+    assert "find_nearest" in str(exc_info.value)
+    assert "search_radius" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# G-UNIT-20: Dict-Parts History Conversion
+# ---------------------------------------------------------------------------
+def test_g_unit_20_dict_parts_history_conversion():
+    """Extracts text or content from dict parts instead of stringifying the dict."""
+    from app.spatial_ai.providers.groq_provider import convert_history_to_groq
+
+    history = [
+        {"role": "user", "parts": [{"text": "Hello, location context?"}]},
+        {"role": "model", "parts": [{"content": "Here is the context."}]},
+        {"role": "user", "parts": [{"empty": "val"}, "Plain string part"]},
+    ]
+    converted = convert_history_to_groq(history)
+    assert len(converted) == 3
+    assert converted[0]["content"] == "Hello, location context?"
+    assert converted[1]["content"] == "Here is the context."
+    assert converted[2]["content"] == "\nPlain string part"
+    assert "{'text':" not in converted[0]["content"]
+
+
+# ---------------------------------------------------------------------------
+# G-UNIT-21: Empty or Whitespace Text Response Rejected
+# ---------------------------------------------------------------------------
+def test_g_unit_21_empty_or_whitespace_text_response_rejected():
+    """Treats empty or whitespace-only content in text completion as malformed."""
+    mock_client = MagicMock()
+    compl_empty = make_sdk_chat_completion(content="   ", finish_reason="stop")
+    mock_client.chat.completions.with_raw_response.create.return_value = make_raw_response(compl_empty)
+
+    provider = GroqProvider(api_key="gsk_test_key", client=mock_client)
+    session = provider.start_conversation(system_instruction="sys", tool_declarations=[])
+
+    with pytest.raises(MalformedModelResponseError) as exc_info:
+        provider.send_user_message(session, "Hello?")
+    assert "empty or whitespace-only" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# G-UNIT-22: SEC-02 Negative Foreign Project Override Rejected
+# ---------------------------------------------------------------------------
+def test_g_unit_22_sec_02_negative_foreign_project_override_rejected():
+    """
+    SEC-02 negative test: the mocked model supplies a DIFFERENT project_id and a foreign workspace_id;
+    assert the agent's tool-call trace arguments carry the REQUEST's workspace_id/project_id and
+    no foreign project_id survives.
+    """
+    from app.spatial_ai.agent import GeminiSpatialAgent
+    from app.spatial_ai.schemas import SpatialAIChatRequest
+    from uuid import UUID
+    from app.db.session import SessionLocal
+    from app.db.models.user import User
+
+    REQUEST_WS = "2a12cd6e-3644-4f72-989b-ac7737d06e3a"
+    REQUEST_PROJ = "86d49543-f049-4060-a6b1-bb0bbde88ec9"
+    FOREIGN_WS = "00000000-0000-0000-0000-000000000888"
+    FOREIGN_PROJ = "00000000-0000-0000-0000-000000000999"
+
+    mock_client = MagicMock()
+    # Model attempts to inject foreign project_id and foreign workspace_id
+    tc = [{
+        "id": "call_sec02_foreign",
+        "type": "function",
+        "function": {
+            "name": "find_nearest",
+            "arguments": json.dumps({
+                "latitude": 0.5071,
+                "longitude": 101.4478,
+                "subcategory": "hospital",
+                "workspace_id": FOREIGN_WS,
+                "project_id": FOREIGN_PROJ,
+            }),
+        },
+    }]
+    compl_1 = make_sdk_chat_completion(content=None, tool_calls=tc, finish_reason="tool_calls")
+    compl_2 = make_sdk_chat_completion(content="RS Khusus ditemukan.", finish_reason="stop")
+    mock_client.chat.completions.with_raw_response.create.side_effect = [
+        make_raw_response(compl_1),
+        make_raw_response(compl_2),
+    ]
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == "ghalibpradipaa04@gmail.com").first()
+        groq_prov = GroqProvider(api_key="gsk_test_key", client=mock_client)
+        agent = GeminiSpatialAgent(provider=groq_prov)
+
+        req = SpatialAIChatRequest(
+            workspace_id=UUID(REQUEST_WS),
+            project_id=UUID(REQUEST_PROJ),
+            latitude=0.5071,
+            longitude=101.4478,
+            message="Cari RS terdekat.",
+        )
+        response = agent.chat(db=db, user=user, request=req)
+
+        assert len(response.tool_calls) == 1
+        executed_args = response.tool_calls[0]["arguments"]
+        # Must carry REQUEST's workspace_id and project_id
+        assert executed_args["workspace_id"] == REQUEST_WS
+        assert executed_args["project_id"] == REQUEST_PROJ
+        # Foreign IDs must not survive
+        assert executed_args["workspace_id"] != FOREIGN_WS
+        assert executed_args["project_id"] != FOREIGN_PROJ
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# G-UNIT-23: Send User Message While Tool Pending Rejected
+# ---------------------------------------------------------------------------
+def test_g_unit_23_send_user_message_while_tool_pending_rejected():
+    """Raises ProviderExecutionError if send_user_message is called while a tool call is pending."""
+    provider = GroqProvider(api_key="gsk_test_key", client=MagicMock())
+    session = provider.start_conversation(system_instruction="sys", tool_declarations=[])
+    session.pending_tool_call_id = "call_pending_1"
+    session.pending_tool_name = "find_nearest"
+
+    with pytest.raises(ProviderExecutionError) as exc_info:
+        provider.send_user_message(session, "Another user question")
+    assert "Cannot send user message while tool call" in str(exc_info.value)
