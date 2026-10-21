@@ -299,3 +299,27 @@ The backend responds with `200 OK`:
   - Field check: `assert 'thought_signature' in types.Part.model_fields` -> OK.
   - Handshake check: Handshake Google API bebas dari error HTTP 400 (`thought_signature missing`).
   - Live execution limitation: Permintaan live saat ini mengembalikan Google AI Studio HTTP 429 `RESOURCE_EXHAUSTED` (`generativelanguage.googleapis.com/generate_content_free_tier_requests`, limit 20 per hari untuk `gemini-3.8-flash`).
+
+---
+
+## G. Multi-Provider & Groq Verification Log (v3 — GroqProvider Implementation)
+
+### Component Overview
+- **Factory**: `backend/app/spatial_ai/providers/factory.py` (`create_spatial_ai_provider`)
+- **Groq Provider**: `backend/app/spatial_ai/providers/groq_provider.py` (`GroqProvider`, `GroqSession`)
+- **SDK**: `groq==1.7.0`
+- **Model**: `openai/gpt-oss-120b` (configurable via `GROQ_MODEL`)
+- **Unit Suite**: `backend/tests/test_groq_spatial_provider.py` (16 tests: `G-UNIT-01` through `G-UNIT-16`)
+
+### Live Gate: `GL-02` (Live Groq Agent Spatial Tool Loop)
+- **Endpoint**: `POST /api/v1/spatial-ai/chat`
+- **Config**: `SPATIAL_AI_PROVIDER=groq`
+- **Workspace**: `PT Insan Utama` (`2a12cd6e-3644-4f72-989b-ac7737d06e3a`)
+- **Dataset**: `Kota Pekanbaru` (`adb542a8-4c47-413f-a98b-3592b7f7ef00`)
+- **Layer**: `Dot_LOKASI_RumahSakit` (`38d437b1-6134-4b00-a9c2-4fc9996d45e4`)
+- **Prompt**: `"Di mana rumah sakit terdekat dari koordinat 0.5071, 101.4478?"`
+- **Expected Verification**:
+  1. Groq generates tool call for `find_nearest`.
+  2. Local PostGIS KNN query executes on `Dot_LOKASI_RumahSakit`.
+  3. Tool result returns to Groq with matching `tool_call_id`.
+  4. Final synthesis identifies `Rumah Sakit Khusus` at approximately `1,077.85 m`.

@@ -16,6 +16,7 @@ from app.spatial_ai.context import build_spatial_ai_context, SpatialAIContext
 from app.spatial_ai.prompts.system_prompt import build_spatial_ai_system_instruction
 from app.spatial_ai.providers.base import BaseSpatialAIProvider
 from app.spatial_ai.providers.gemini_provider import GeminiProvider
+from app.spatial_ai.providers.factory import create_spatial_ai_provider
 from app.spatial_ai.tool_registry import SpatialAIToolRegistry, default_registry
 import re
 from app.spatial_ai.schemas import (
@@ -55,7 +56,7 @@ class GeminiSpatialAgent:
         registry: Optional[SpatialAIToolRegistry] = None,
         max_tool_calls: Optional[int] = None,
     ):
-        self.provider = provider or GeminiProvider()
+        self.provider = provider or create_spatial_ai_provider()
         self.registry = registry or default_registry
         self.max_tool_calls = (
             max_tool_calls

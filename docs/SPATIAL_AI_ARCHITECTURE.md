@@ -119,10 +119,23 @@ class BaseSpatialAIProvider(ABC):
     def send_tool_result(self, session: Any, tool_name: str, result: Dict[str, Any]) -> ProviderStepResult: ...
 ```
 
-### Concrete Implementation: `GeminiProvider`
-- Integrates `google-generativeai` with the officially supported model `gemini-3.8-flash`.
-- Automatically normalizes tool definitions to Gemini proto-compatible schemas (`type` to uppercase `STRING`, `NUMBER`, `INTEGER`, etc., and removes unsupported fields like `default`).
-- Handles network exceptions, timeouts (`DeadlineExceeded`), and quota limits (`ResourceExhausted`), mapping them to `ProviderExecutionError`.
+### Concrete Implementations
+
+#### 1. `GeminiProvider`
+- Integrates `google-genai==2.29.0` with the model `gemini-3.8-flash`.
+- Automatically normalizes tool definitions to Gemini proto-compatible schemas (`type` to uppercase `STRING`, `NUMBER`, `INTEGER`, etc.).
+- Preserves native `thought_signature` across multi-turn reasoning loops.
+- Handles network exceptions, timeouts, and quota limits (429/503), mapping them to `ProviderExecutionError`.
+
+#### 2. `GroqProvider` (Alternative High-Throughput Provider)
+- Integrates official `groq==1.7.0` SDK with `openai/gpt-oss-120b`.
+- Converts Gemini tool declarations to standard OpenAI/Groq JSON Schema format recursively without `strict=true`.
+- Dispatches chat completions with `parallel_tool_calls=false`, `temperature=0`, `max_retries=0` (SDK retries disabled).
+- Enforces strict single tool call per turn, validates JSON object arguments before dispatch, and preserves `tool_call_id` in `role="tool"` responses.
+- Bound by session limit `<= SPATIAL_AI_MAX_TOOL_CALLS + 1`.
+
+### Provider Factory (`create_spatial_ai_provider`)
+Located at `backend/app/spatial_ai/providers/factory.py`, instantiates the active provider based on `SPATIAL_AI_PROVIDER` (`gemini` or `groq`).
 
 ---
 
