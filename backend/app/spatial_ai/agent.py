@@ -43,6 +43,53 @@ from app.spatial_ai.exceptions import (
 )
 
 
+
+def extract_facility_name_and_type(
+    raw_name: Optional[str],
+    properties: Optional[Dict[str, Any]],
+) -> Tuple[Optional[str], Optional[str], bool]:
+    """
+    Separates a facility's verified proper name from its type classification label (REMARK).
+
+    Returns:
+        (proper_name, facility_type, name_available)
+
+    Operational rules:
+    - If NAMOBJ is explicitly provided in properties:
+      - If non-empty string, it is the verified proper name (name_available=True).
+      - If None or empty, the name is MISSING in data (name_available=False, proper_name=None).
+    - If NAMOBJ is not present in properties:
+      - If raw_name matches REMARK (case-insensitive), it is a type label, NOT a name -> name_available=False, proper_name=None.
+      - If raw_name is present and non-empty, it is treated as the proper name (name_available=True).
+      - Otherwise, name_available=False, proper_name=None.
+    - REMARK is preserved strictly as facility_type, NEVER merged into proper_name.
+    """
+    props = properties or {}
+    type_label = props.get("REMARK") or None
+
+    # 1. Explicit NAMOBJ check
+    if "NAMOBJ" in props:
+        namobj = props.get("NAMOBJ")
+        if namobj is not None and str(namobj).strip():
+            return str(namobj).strip(), type_label, True
+        return None, type_label, False
+
+    # 2. Check candidate name
+    candidate = (
+        raw_name
+        or props.get("name")
+        or props.get("nama")
+        or props.get("Nama")
+    )
+    if candidate:
+        candidate_str = str(candidate).strip()
+        if type_label and candidate_str.lower() == str(type_label).strip().lower():
+            return None, type_label, False
+        return candidate_str, type_label, True
+
+    return None, type_label, False
+
+
 class GeminiSpatialAgent:
     """
     Core AI reasoning agent for ScapeGIS.
@@ -331,7 +378,17 @@ class GeminiSpatialAgent:
             if tool_output.source:
                 sources.append(tool_output.source)
             if tool_output.result:
-                name_str = f" ({tool_output.result.name})" if tool_output.result.name else ""
+                props = getattr(tool_output.result, "properties", {}) or {}
+                proper_name, facility_type, name_avail = extract_facility_name_and_type(
+                    tool_output.result.name, props
+                )
+                if name_avail and proper_name:
+                    name_str = f" ({proper_name})"
+                elif facility_type:
+                    name_str = f" (jenis: {facility_type}, nama tidak tersedia di data)"
+                else:
+                    name_str = " (nama tidak tersedia di data)"
+
                 facts.append(
                     SpatialFact(
                         type="distance",
@@ -350,7 +407,7 @@ class GeminiSpatialAgent:
                             type=MapActionType.HIGHLIGHT_FEATURE,
                             layer_id=tool_output.source.layer_id,
                             feature_ids=[tool_output.result.feature_id],
-                            properties={"name": tool_output.result.name, "distance_m": tool_output.result.distance_m},
+                            properties={"name": proper_name, "distance_m": tool_output.result.distance_m},
                         )
                     )
 
@@ -493,19 +550,16 @@ class GeminiSpatialAgent:
                     if not isinstance(f, dict):
                         continue
 
-                    # Drop nearest_properties entirely, extract name
+                    # Drop nearest_properties entirely, extract proper name and type
                     if "nearest_properties" in f:
                         props = f.pop("nearest_properties", None) or {}
-                        name = (
-                            props.get("NAMOBJ")
-                            or props.get("REMARK")
-                            or props.get("name")
-                            or props.get("nama")
-                            or props.get("Nama")
-                            or f.get("display_name")
+                        proper_name, facility_type, name_avail = extract_facility_name_and_type(
+                            f.get("name"), props
                         )
-                        if name and not f.get("name"):
-                            f["name"] = name
+                        f["name"] = proper_name
+                        f["name_available"] = name_avail
+                        if facility_type:
+                            f["facility_type"] = facility_type
 
                     # Drop administrative properties entirely, extract area_name
                     if "properties" in f:
@@ -543,6 +597,18 @@ class GeminiSpatialAgent:
 
             return d
 
+        # For FindNearestOutput or any output with result details
+        if "result" in d and isinstance(d["result"], dict):
+            res = d["result"]
+            props = res.get("properties") or {}
+            proper_name, facility_type, name_avail = extract_facility_name_and_type(
+                res.get("name"), props
+            )
+            res["name"] = proper_name
+            res["name_available"] = name_avail
+            if facility_type:
+                res["facility_type"] = facility_type
+
         # Filter out bulky geometry strings or excessive nested arrays
         if "features" in d and isinstance(d["features"], list):
             # Limit features passed into LLM prompt
@@ -551,6 +617,14 @@ class GeminiSpatialAgent:
                 if isinstance(f, dict):
                     f.pop("geometry", None)
                     f.pop("geojson", None)
+                    props = f.get("properties") or {}
+                    proper_name, facility_type, name_avail = extract_facility_name_and_type(
+                        f.get("name"), props
+                    )
+                    f["name"] = proper_name
+                    f["name_available"] = name_avail
+                    if facility_type:
+                        f["facility_type"] = facility_type
 
         return d
 
